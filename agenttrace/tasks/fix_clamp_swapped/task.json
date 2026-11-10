@@ -1,0 +1,41 @@
+{
+  "id": "fix_clamp_swapped",
+  "instruction": "src/math_util.py 中的 clamp(value, lo, hi) 应把 value 限制在 [lo, hi] 区间内，但当前实现把 min/max 用反了。请阅读该文件并修复，使隐藏测试全部通过；可先用 run_tests 验证。",
+  "test_cmd": [
+    "{python}",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "hidden_tests",
+    "-p",
+    "test_*.py",
+    "-t",
+    "."
+  ],
+  "scripted_actions": [
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/math_util.py"
+      }
+    },
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/math_util.py",
+        "content": "def clamp(value, lo, hi):\n    \"\"\"把 value 限制在 [lo, hi] 区间内。\"\"\"\n    return max(lo, min(hi, value))\n"
+      }
+    },
+    {
+      "tool": "run_tests",
+      "args": {}
+    },
+    {
+      "tool": "finish",
+      "args": {
+        "summary": "修复完成，隐藏测试全部通过"
+      }
+    }
+  ]
+}

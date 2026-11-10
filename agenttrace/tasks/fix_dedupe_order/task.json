@@ -1,0 +1,41 @@
+{
+  "id": "fix_dedupe_order",
+  "instruction": "src/list_util.py 中的 dedupe(xs) 按约定应去除重复并保持首次出现的顺序，但当前实现做了排序，破坏了顺序。请阅读该文件并修复，使隐藏测试全部通过；可先用 run_tests 验证。",
+  "test_cmd": [
+    "{python}",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "hidden_tests",
+    "-p",
+    "test_*.py",
+    "-t",
+    "."
+  ],
+  "scripted_actions": [
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/list_util.py"
+      }
+    },
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/list_util.py",
+        "content": "def dedupe(xs: list) -> list:\n    \"\"\"去重并保持首次出现顺序。\"\"\"\n    seen: set = set()\n    out: list = []\n    for x in xs:\n        if x not in seen:\n            seen.add(x)\n            out.append(x)\n    return out\n"
+      }
+    },
+    {
+      "tool": "run_tests",
+      "args": {}
+    },
+    {
+      "tool": "finish",
+      "args": {
+        "summary": "修复完成，隐藏测试全部通过"
+      }
+    }
+  ]
+}

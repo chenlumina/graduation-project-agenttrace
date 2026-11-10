@@ -1,0 +1,41 @@
+{
+  "id": "fix_password_strength",
+  "instruction": "src/passwd_util.py 中的 is_strong(pwd) 按约定要求：长度至少 8，且同时包含小写字母、大写字母和数字。当前实现漏掉了对数字的检查。请阅读该文件并修复，使隐藏测试全部通过；可先用 run_tests 验证。",
+  "test_cmd": [
+    "{python}",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "hidden_tests",
+    "-p",
+    "test_*.py",
+    "-t",
+    "."
+  ],
+  "scripted_actions": [
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/passwd_util.py"
+      }
+    },
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/passwd_util.py",
+        "content": "def is_strong(pwd: str) -> bool:\n    \"\"\"强口令：长度>=8 且含小写、大写、数字。\"\"\"\n    if len(pwd) < 8:\n        return False\n    has_lower = any(c.islower() for c in pwd)\n    has_upper = any(c.isupper() for c in pwd)\n    has_digit = any(c.isdigit() for c in pwd)\n    return has_lower and has_upper and has_digit\n"
+      }
+    },
+    {
+      "tool": "run_tests",
+      "args": {}
+    },
+    {
+      "tool": "finish",
+      "args": {
+        "summary": "修复完成，隐藏测试全部通过"
+      }
+    }
+  ]
+}

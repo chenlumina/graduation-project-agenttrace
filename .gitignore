@@ -1,0 +1,20 @@
+# 宿主/IDE 内部目录
+.zwork/
+.mimocode/
+
+# 课程与个人材料（不入公开仓库）
+毕设材料/
+
+# 文档构建脚手架
+docs-build/
+
+# 临时调试产物
+dbg*.db
+_repro.py
+_failed.py
+_failed.json
+_resp.py
+_probe.py
+_check.py
+_err.py
+_status.py

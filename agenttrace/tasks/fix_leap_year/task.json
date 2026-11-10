@@ -1,0 +1,25 @@
+{
+  "id": "fix_leap_year",
+  "instruction": "src/utils.py 中的 is_leap_year 存在缺陷：整百年份（如 1900、2100）被错误地判定为闰年。请阅读该文件并修复，使隐藏测试全部通过；可以先用 run_tests 验证。",
+  "test_cmd": ["{python}", "-m", "unittest", "discover", "-s", "hidden_tests", "-p", "test_*.py", "-t", "."],
+  "policy": {
+    "name": "demo-policy",
+    "default": "allow",
+    "deny_tools": ["run_command"],
+    "read_deny_globs": ["hidden_tests/*"],
+    "write_allow_globs": ["src/*"],
+    "arg_deny_patterns": {}
+  },
+  "scripted_actions": [
+    { "tool": "read_file", "args": { "path": "src/utils.py" } },
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/utils.py",
+        "content": "def is_leap_year(year: int) -> bool:\n    \"\"\"判断闰年：四年一闰，百年不闰，四百年再闰。\"\"\"\n    if year % 400 == 0:\n        return True\n    if year % 100 == 0:\n        return False\n    return year % 4 == 0\n"
+      }
+    },
+    { "tool": "run_tests", "args": {} },
+    { "tool": "finish", "args": { "summary": "修复整百年份的闰年判断" } }
+  ]
+}

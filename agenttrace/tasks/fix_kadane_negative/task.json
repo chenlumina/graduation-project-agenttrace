@@ -1,0 +1,41 @@
+{
+  "id": "fix_kadane_negative",
+  "instruction": "src/array_util.py 中的 max_subarray_sum(arr) 应返回非空整数数组的最大子段和（允许全为负数，此时返回最大的单个元素）。当前实现对全负数组错误地返回 0。请阅读该文件并修复，使隐藏测试全部通过；可先用 run_tests 验证。",
+  "test_cmd": [
+    "{python}",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "hidden_tests",
+    "-p",
+    "test_*.py",
+    "-t",
+    "."
+  ],
+  "scripted_actions": [
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/array_util.py"
+      }
+    },
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/array_util.py",
+        "content": "def max_subarray_sum(arr: list) -> int:\n    \"\"\"最大子段和：数组非空，结果至少为最大单元素。\"\"\"\n    best = arr[0]\n    cur = arr[0]\n    for x in arr[1:]:\n        cur = max(x, cur + x)\n        best = max(best, cur)\n    return best\n"
+      }
+    },
+    {
+      "tool": "run_tests",
+      "args": {}
+    },
+    {
+      "tool": "finish",
+      "args": {
+        "summary": "修复完成，隐藏测试全部通过"
+      }
+    }
+  ]
+}

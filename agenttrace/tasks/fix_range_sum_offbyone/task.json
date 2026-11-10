@@ -1,0 +1,41 @@
+{
+  "id": "fix_range_sum_offbyone",
+  "instruction": "src/sum_upto.py 中的 sum_upto(n) 应返回 1 到 n（含 n）的整数和，但当前实现漏掉了 n 本身（差一错误）。请阅读该文件并修复，使隐藏测试全部通过；可先用 run_tests 验证。",
+  "test_cmd": [
+    "{python}",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "hidden_tests",
+    "-p",
+    "test_*.py",
+    "-t",
+    "."
+  ],
+  "scripted_actions": [
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/sum_upto.py"
+      }
+    },
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/sum_upto.py",
+        "content": "def sum_upto(n: int) -> int:\n    \"\"\"返回 1 到 n（含 n）的整数和。\"\"\"\n    return sum(range(1, n + 1))\n"
+      }
+    },
+    {
+      "tool": "run_tests",
+      "args": {}
+    },
+    {
+      "tool": "finish",
+      "args": {
+        "summary": "修复完成，隐藏测试全部通过"
+      }
+    }
+  ]
+}

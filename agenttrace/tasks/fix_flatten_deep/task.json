@@ -1,0 +1,41 @@
+{
+  "id": "fix_flatten_deep",
+  "instruction": "src/nested_util.py 中的 flatten(xs) 按约定应把任意深度嵌套的列表展平成一级列表（非列表元素保持原样），但当前实现只展开了一层。请阅读该文件并修复，使隐藏测试全部通过；可先用 run_tests 验证。",
+  "test_cmd": [
+    "{python}",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "hidden_tests",
+    "-p",
+    "test_*.py",
+    "-t",
+    "."
+  ],
+  "scripted_actions": [
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/nested_util.py"
+      }
+    },
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/nested_util.py",
+        "content": "def flatten(xs: list) -> list:\n    \"\"\"展平任意深度嵌套的列表。\"\"\"\n    out: list = []\n    for x in xs:\n        if isinstance(x, list):\n            out.extend(flatten(x))\n        else:\n            out.append(x)\n    return out\n"
+      }
+    },
+    {
+      "tool": "run_tests",
+      "args": {}
+    },
+    {
+      "tool": "finish",
+      "args": {
+        "summary": "修复完成，隐藏测试全部通过"
+      }
+    }
+  ]
+}

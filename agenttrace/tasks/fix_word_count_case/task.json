@@ -1,0 +1,41 @@
+{
+  "id": "fix_word_count_case",
+  "instruction": "src/text_stats.py 中的 count_words(text) 按约定应大小写不敏感地统计单词频次（按空白切分），但当前实现区分了大小写。请阅读该文件并修复，使隐藏测试全部通过；可先用 run_tests 验证。",
+  "test_cmd": [
+    "{python}",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "hidden_tests",
+    "-p",
+    "test_*.py",
+    "-t",
+    "."
+  ],
+  "scripted_actions": [
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/text_stats.py"
+      }
+    },
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/text_stats.py",
+        "content": "def count_words(text: str) -> dict:\n    \"\"\"统计单词频次：大小写不敏感，按空白切分。\"\"\"\n    counts: dict = {}\n    for w in text.split():\n        w = w.lower()\n        counts[w] = counts.get(w, 0) + 1\n    return counts\n"
+      }
+    },
+    {
+      "tool": "run_tests",
+      "args": {}
+    },
+    {
+      "tool": "finish",
+      "args": {
+        "summary": "修复完成，隐藏测试全部通过"
+      }
+    }
+  ]
+}

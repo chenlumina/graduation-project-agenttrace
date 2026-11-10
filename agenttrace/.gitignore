@@ -1,0 +1,19 @@
+# 本地凭据与产物不入库
+.env
+__pycache__/
+*.pyc
+*.db
+*.db-journal
+traces.db
+demo-traces.db
+real-traces.db
+demo-trace.json
+real-trace.json
+*.summary.md
+experiments/
+demo-traces.db-journal
+
+# 本地临时目录与会话日志（含调试输出，可能夹带源码/凭据片段）
+.tmp-test/
+.zwork/
+.agenttrace/

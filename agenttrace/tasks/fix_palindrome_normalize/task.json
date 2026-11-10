@@ -1,0 +1,41 @@
+{
+  "id": "fix_palindrome_normalize",
+  "instruction": "src/text_util.py 中的 is_palindrome(s) 按约定应忽略大小写与空白后判断回文，但当前实现直接比较原串。请阅读该文件并修复，使隐藏测试全部通过；可先用 run_tests 验证。",
+  "test_cmd": [
+    "{python}",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "hidden_tests",
+    "-p",
+    "test_*.py",
+    "-t",
+    "."
+  ],
+  "scripted_actions": [
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/text_util.py"
+      }
+    },
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/text_util.py",
+        "content": "def is_palindrome(s: str) -> bool:\n    \"\"\"判断回文：忽略大小写与空白。\"\"\"\n    t = s.replace(\" \", \"\").lower()\n    return t == t[::-1]\n"
+      }
+    },
+    {
+      "tool": "run_tests",
+      "args": {}
+    },
+    {
+      "tool": "finish",
+      "args": {
+        "summary": "修复完成，隐藏测试全部通过"
+      }
+    }
+  ]
+}

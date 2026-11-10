@@ -1,0 +1,12 @@
+# AgentTrace 运行依赖
+#
+# mcp 必须锁 1.x：2.x 将 FastMCP 更名为 MCPServer、客户端 API 亦有变更，
+# 本项目的 mcptools.py / mcp_demo_server.py 按 1.x API 编写。
+mcp>=1.9,<2
+
+# Web 回放服务（可选：不使用 serve 子命令时无需安装）
+fastapi>=0.110
+uvicorn>=0.27
+
+# 说明：其余功能（CLI、任务执行、指标、代码审计）仅依赖 Python 标准库。
+# Docker 沙箱模式需要本机安装并启动 Docker Desktop / Docker Engine。

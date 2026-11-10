@@ -1,0 +1,41 @@
+{
+  "id": "fix_average_empty",
+  "instruction": "src/stats_util.py 中的 average(values) 对空列表会抛 ZeroDivisionError。按约定：空列表应返回 0.0。请阅读该文件并修复，使隐藏测试全部通过；可先用 run_tests 验证。",
+  "test_cmd": [
+    "{python}",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "hidden_tests",
+    "-p",
+    "test_*.py",
+    "-t",
+    "."
+  ],
+  "scripted_actions": [
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/stats_util.py"
+      }
+    },
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/stats_util.py",
+        "content": "def average(values: list) -> float:\n    \"\"\"返回数值列表的平均值；空列表约定返回 0.0。\"\"\"\n    if not values:\n        return 0.0\n    return sum(values) / len(values)\n"
+      }
+    },
+    {
+      "tool": "run_tests",
+      "args": {}
+    },
+    {
+      "tool": "finish",
+      "args": {
+        "summary": "修复完成，隐藏测试全部通过"
+      }
+    }
+  ]
+}

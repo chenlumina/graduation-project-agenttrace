@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentTrace 回放界面 · 视觉稿 v1 · Ink &amp; Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f2ede2; --paper-deep:#e8e0cf; --ink:#1c1a16; --ink-soft:#57524a; --ink-faint:#8f887b;
+    --accent:#d64522; --accent-deep:#a32d12; --teal:#1f4f46; --line:#cec4b0;
+    --font-display:"Noto Serif SC",serif;
+    --font-body:"Noto Sans SC",sans-serif;
+    --font-mono:"DM Mono",monospace;
+    --ease:cubic-bezier(.22,1,.36,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--paper);color:var(--ink);font-family:var(--font-body);
+    font-size:14px;line-height:1.6;
+  }
+  body::before{
+    content:"";position:fixed;inset:0;z-index:999;pointer-events:none;opacity:.055;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .mono{font-family:var(--font-mono)}
+  .kicker{
+    font-family:var(--font-mono);font-size:12px;letter-spacing:.32em;text-transform:uppercase;
+    color:var(--accent);display:flex;align-items:center;gap:14px;
+  }
+  .kicker::after{content:"";flex:0 0 120px;height:1px;background:var(--accent)}
+  .page{max-width:1240px;margin:0 auto;padding:72px 32px 64px}
+
+  /* ===== 页头 ===== */
+  .head{display:grid;grid-template-columns:1.35fr .8fr;gap:40px;align-items:end;margin-bottom:48px}
+  .head h1{
+    font-family:var(--font-display);font-weight:900;
+    font-size:clamp(2.7rem,7.2vw,5.6rem);line-height:.98;letter-spacing:-.01em;
+    margin:18px 0 0;
+  }
+  .head h1 em{position:relative;display:inline-block;font-style:normal}
+  .head h1 em::after{
+    content:"";position:absolute;left:-2%;bottom:.08em;width:104%;height:.14em;
+    background:var(--accent);transform:skewX(-12deg);z-index:-1;
+  }
+  .head .aside{padding-bottom:8px}
+  .head .aside p{font-size:13px;color:var(--ink-soft);line-height:1.9}
+  .head .aside p b{color:var(--ink);font-weight:500}
+  .head .aside .src{margin-top:14px;padding-top:10px;border-top:1px solid var(--line);font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);letter-spacing:.03em}
+
+  .rise{opacity:0;transform:translateY(22px);animation:fadeUp .75s var(--ease) forwards}
+  .d1{animation-delay:.12s}.d2{animation-delay:.24s}
+  @keyframes fadeUp{to{opacity:1;transform:translateY(0)}}
+  @media (prefers-reduced-motion:reduce){.rise,.row{animation:none!important;opacity:1!important;transform:none!important}}
+
+  /* ===== 应用框 ===== */
+  .frame{border:1px solid var(--line);background:var(--paper);box-shadow:14px 14px 0 rgba(28,26,22,.12);margin-bottom:64px}
+  .app{display:flex;flex-direction:column;min-height:640px}
+
+  .appbar{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:2.5px solid var(--ink);flex-wrap:wrap}
+  .mark{display:flex;align-items:center;gap:10px}
+  .mark svg{display:block}
+  .mark .name{font-family:var(--font-display);font-weight:600;font-size:17px}
+  .crumb{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint)}
+  .crumb b{color:var(--ink);font-weight:500}
+  .appbar .spacer{flex:1}
+  .chip{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft);border:1px solid var(--line);padding:4px 10px;white-space:nowrap}
+  .chip .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--teal);margin-right:6px;vertical-align:1px}
+  .btn{
+    font-family:var(--font-body);font-weight:700;font-size:12.5px;letter-spacing:.05em;
+    background:var(--ink);color:var(--paper);border:1px solid var(--ink);
+    padding:6px 14px;cursor:default;transition:letter-spacing .3s,background .3s;
+  }
+  .btn:hover{letter-spacing:.12em;background:var(--accent-deep);border-color:var(--accent-deep)}
+
+  /* 摘要带 */
+  .sumband{display:flex;align-items:center;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--line);row-gap:10px}
+  .sumband .title{font-family:var(--font-display);font-weight:600;font-size:1.05rem;letter-spacing:.01em;margin-right:18px}
+  .verdict{
+    font-family:var(--font-mono);font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--teal);border:2px solid var(--teal);padding:4px 12px;margin-right:20px;background:rgba(31,79,70,.06)
+  }
+  .stat{display:flex;flex-direction:column;gap:2px;padding:0 20px;border-left:1px solid var(--line)}
+  .stat .k{font-family:var(--font-mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint)}
+  .stat .v{font-family:var(--font-mono);font-weight:500;font-size:16px;letter-spacing:.03em}
+  .stat .v .u{font-size:11px;color:var(--ink-faint)}
+
+  /* 三区 */
+  .cols{display:grid;grid-template-columns:256px minmax(0,1fr) 396px;flex:1;min-height:0}
+  .rail{border-right:1px solid var(--line);overflow:auto;padding:14px 0}
+  .rail h3,.detail h3{
+    font-family:var(--font-mono);font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;
+    color:var(--ink-faint);font-weight:500;padding:2px 16px 10px;
+  }
+  .filters{display:flex;gap:6px;padding:0 16px 12px}
+  .fchip{
+    font-family:var(--font-mono);font-size:11px;letter-spacing:.05em;color:var(--ink-soft);
+    border:1px solid var(--line);padding:3px 10px;cursor:default;transition:letter-spacing .3s,background .3s;
+  }
+  .fchip:hover{letter-spacing:.12em;background:var(--paper-deep)}
+  .fchip.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .att{
+    display:flex;align-items:center;gap:10px;padding:8px 16px;border-left:4px solid transparent;
+    transition:background .2s;
+  }
+  .att:hover{background:var(--paper-deep);box-shadow:inset 4px 0 0 var(--accent)}
+  .att .st{width:8px;height:8px;border-radius:50%;background:var(--teal);flex:none}
+  .att .info{flex:1;min-width:0}
+  .att .t{font-size:12.5px;font-weight:500;font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .att .m{font-size:10.5px;color:var(--ink-faint);font-family:var(--font-mono);letter-spacing:.03em}
+  .att.active{background:var(--paper-deep);border-left-color:var(--accent)}
+  .att.active .t{font-weight:500;color:var(--ink)}
+
+  /* 中栏 */
+  .center{overflow:auto;padding:16px 18px 20px;min-width:0}
+  .controls{display:flex;align-items:center;gap:10px;padding-bottom:14px;flex-wrap:wrap}
+  .cbtn{
+    width:32px;height:32px;border:1px solid var(--ink);background:var(--paper);
+    display:inline-flex;align-items:center;justify-content:center;color:var(--ink);cursor:default;
+    transition:background .2s,color .2s;
+  }
+  .cbtn:hover{background:var(--ink);color:var(--paper)}
+  .cbtn.primary{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+  .cbtn.primary:hover{background:var(--accent-deep)}
+  .speed{font-family:var(--font-mono);font-size:11.5px;letter-spacing:.05em;color:var(--ink-soft);border:1px solid var(--line);padding:5px 10px;transition:letter-spacing .3s}
+  .speed:hover{letter-spacing:.12em}
+  .clock{margin-left:auto;font-family:var(--font-mono);font-size:12.5px;letter-spacing:.03em;color:var(--ink-soft)}
+  .clock b{color:var(--ink);font-weight:500}
+  .scrub{position:relative;height:26px;flex:1;min-width:170px}
+  .scrub .track{position:absolute;left:0;right:0;top:12px;height:2px;background:var(--line)}
+  .scrub .fill{position:absolute;left:0;top:12px;height:2px;background:var(--accent);width:19%}
+  .scrub .tick{position:absolute;top:8px;width:1px;height:10px;background:var(--line)}
+  .scrub .head{position:absolute;top:13px;width:9px;height:9px;background:var(--accent);transform:translateX(-50%) rotate(45deg);left:19%}
+
+  /* 瀑布图：台账双规则线 */
+  .wf{border-left:1px solid var(--line);border-right:1px solid var(--line);border-bottom:2.5px solid var(--ink);border-top:2.5px solid var(--ink);position:relative;overflow-x:auto}
+  .wf-head{display:flex;padding:9px 0 7px;position:relative;margin-left:150px;min-width:510px}
+  .axis{position:relative;flex:1;height:14px;font-family:var(--font-mono);font-size:10px;color:var(--ink-faint);letter-spacing:.03em}
+  .axis span{position:absolute;top:0;transform:translateX(-50%)}
+  .wf-body{position:relative;padding:10px 0 12px;min-width:660px}
+  .grid{position:absolute;inset:0;margin-left:150px;pointer-events:none}
+  .grid i{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
+  .row{display:flex;align-items:center;height:28px;padding-right:14px;position:relative;animation:fadeUp .6s var(--ease) both;animation-delay:calc(var(--i)*.035s)}
+  .row.gap{height:9px}
+  .gut{width:150px;flex:none;display:flex;align-items:center;gap:7px;padding-left:12px}
+  .gut svg{flex:none;color:var(--ink-soft)}
+  .gut .sq{font-family:var(--font-mono);font-size:10px;color:var(--ink-faint);width:22px;flex:none}
+  .gut .lb{font-size:12px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .track{flex:1;position:relative;height:18px}
+  .row .lane{position:absolute;left:0;right:0;top:8px;height:1px;background:var(--line)}
+  .bar{position:absolute;top:4px;height:10px}
+  .bar.llm{background:var(--accent)}
+  .bar.cmd{background:linear-gradient(90deg,rgba(214,69,34,.10),rgba(214,69,34,.42));border-left:2.5px solid var(--accent)}
+  .bar.verdict{background:linear-gradient(90deg,rgba(31,79,70,.10),rgba(31,79,70,.38));border-left:2.5px solid var(--teal)}
+  .marker{position:absolute;top:5px;width:9px;height:9px;background:var(--paper)}
+  .mk-tool{border:2px solid var(--ink);border-radius:50%}
+  .mk-diff{border:2px solid var(--accent);transform:rotate(45deg)}
+  .mk-run{border:2px solid var(--teal);border-radius:50%}
+  .tok{position:absolute;top:-3px;font-family:var(--font-mono);font-size:10px;letter-spacing:.03em;color:var(--ink-soft);white-space:nowrap}
+  .row:hover{background:var(--paper-deep)}
+  .row:hover .gut .lb{color:var(--accent-deep)}
+  .row.active{background:var(--paper-deep);box-shadow:inset 4px 0 0 var(--accent)}
+  .row.active .lb{font-weight:500}
+  .playhead{position:absolute;top:9px;bottom:11px;width:2px;background:var(--accent);left:calc(150px + (100% - 164px)*0.19);z-index:2}
+  .playhead::before{content:"";position:absolute;top:-5px;left:-4px;width:8px;height:8px;background:var(--accent);transform:rotate(45deg)}
+  .wf-foot{display:flex;gap:18px;padding:9px 12px;border-top:1px solid var(--line);font-size:11px;color:var(--ink-soft);flex-wrap:wrap}
+  .wf-foot .li{display:inline-flex;align-items:center;gap:7px}
+  .wf-foot .sw{width:9px;height:9px;display:inline-block}
+  .wf-foot .note{margin-left:auto;font-style:italic;font-family:var(--font-display)}
+
+  /* 右栏 */
+  .detail{border-left:1px solid var(--line);overflow:auto;display:flex;flex-direction:column}
+  .tabs{display:flex;border-bottom:2.5px solid var(--ink)}
+  .tab{
+    flex:1;text-align:center;font-family:var(--font-mono);font-size:11px;letter-spacing:.16em;
+    text-transform:uppercase;padding:11px 0;color:var(--ink-faint);border-bottom:2px solid transparent;margin-bottom:-2.5px;
+    transition:letter-spacing .3s,color .2s;cursor:default;
+  }
+  .tab:hover{letter-spacing:.24em;color:var(--ink-soft)}
+  .tab.on{color:var(--ink);font-weight:500;border-bottom-color:var(--accent)}
+  .detail .body{padding:16px;overflow:auto;flex:1}
+  .ev-head{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+  .ev-head .ic{color:var(--accent)}
+  .ev-head b{font-family:var(--font-display);font-weight:600;font-size:1rem;letter-spacing:.01em}
+  .ev-head .tm{margin-left:auto;font-family:var(--font-mono);font-size:10.5px;color:var(--ink-faint)}
+  .kv{display:flex;font-size:12.5px;margin:4px 0}
+  .kv .k{width:78px;flex:none;color:var(--ink-faint);font-family:var(--font-mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;padding-top:2px}
+  .kv .v{font-family:var(--font-mono);font-size:12px;word-break:break-all}
+  .console{
+    margin:12px 0;background:var(--ink);color:var(--paper);
+    font-family:var(--font-mono);font-size:11.5px;line-height:1.75;overflow:auto;
+    border:1px solid var(--ink);
+  }
+  .console .cap{
+    display:flex;justify-content:space-between;padding:6px 12px;
+    border-bottom:1px solid rgba(242,237,226,.18);
+    font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:rgba(242,237,226,.55);
+  }
+  .console .ln{padding:0 12px;white-space:pre}
+  .console .meta{color:rgba(242,237,226,.45)}
+  .console .ctx{color:rgba(242,237,226,.92)}
+  .console .del{color:#E89178}
+  .console .add{color:#93C7A9}
+  .audit{background:var(--paper-deep);border-left:2.5px solid var(--ink);padding:11px 13px;margin-top:14px}
+  .audit .head{display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:5px}
+  .audit .head b{font-family:var(--font-display);font-weight:600}
+  .audit .head .n{font-family:var(--font-mono);color:var(--teal);letter-spacing:.1em;margin-left:auto}
+  .audit .sub{font-size:12px;color:var(--ink-soft)}
+  .audit .note{font-size:11px;color:var(--ink-faint);margin-top:7px;font-style:italic}
+  .link{margin-top:14px;border-top:1px solid var(--line);padding-top:11px}
+  .link .row{display:flex;align-items:center;gap:9px;font-size:12px;padding:4px 0;color:var(--ink-soft)}
+  .link .row .st{width:7px;height:7px;border-radius:50%;background:var(--teal);flex:none}
+  .metafoot{
+    margin-top:auto;border-top:2.5px solid var(--ink);padding:10px 16px;
+    font-family:var(--font-mono);font-size:10.5px;color:var(--ink-faint);line-height:1.9;letter-spacing:.03em;
+  }
+
+  /* 设计说明 */
+  .notes .kicker{margin-bottom:18px}
+  .notes .grid2{display:grid;grid-template-columns:1fr 1fr;gap:26px 40px}
+  .notes .item{border-left:3px solid var(--ink);padding-left:16px}
+  .notes .item .idx{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.24em;color:var(--accent);text-transform:uppercase}
+  .notes .item b{display:block;font-family:var(--font-display);font-weight:600;font-size:1rem;margin:4px 0 6px}
+  .notes .item p{font-size:13px;color:var(--ink-soft);line-height:1.9}
+  .notes .src{margin-top:26px;padding-top:12px;border-top:1px solid var(--line);font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);letter-spacing:.03em}
+
+  @media (max-width:1080px){
+    .cols{grid-template-columns:230px minmax(0,1fr)}
+    .detail{grid-column:1 / -1;border-left:none;border-top:2.5px solid var(--ink)}
+    .head{grid-template-columns:1fr;gap:18px}
+  }
+  @media (max-width:720px){
+    .page{padding:32px 20px 48px}
+    .cols{grid-template-columns:1fr}
+    .rail{border-right:none;border-bottom:1px solid var(--line)}
+    .detail{border-top:none}
+    .sumband .stat{padding:0 12px}
+    .notes .grid2{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="head rise">
+    <div>
+      <div class="kicker">AgentTrace · Replay Interface · Visual Spec V1</div>
+      <h1>让 Agent 的一次运行，<em>一眼可读</em></h1>
+    </div>
+    <div class="aside">
+      <p>回放界面视觉稿 · 方向：<b>暖纸台账 × 执行瀑布图</b>。数据来自真实实验 <b>exp-20261108-125155</b>（mimo-v2.6-flash × Docker 沙箱 × 11/11 通过）中 fix_leap_year 的完整轨迹，非演示数据。</p>
+      <p class="src">SOURCE · experiments/exp-20261108-125155.db · attempt b41a9b9f · 2026-11-08</p>
+    </div>
+  </header>
+
+  <div class="frame rise d1">
+    <div class="app">
+
+      <div class="appbar">
+        <div class="mark">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#1c1a16" stroke-width="1.6">
+            <rect x="1.5" y="1.5" width="17" height="17"/>
+            <path d="M4 12.5 L8 8 L11 11 L16 5.5"/>
+            <path d="M14.6 3.6 16.4 5.4" stroke="#d64522"/>
+          </svg>
+          <span class="name">AgentTrace</span>
+        </div>
+        <div class="crumb">EXP-20261108-125155 · <b>B41A9B9F</b> · FIX_LEAP_YEAR</div>
+        <div class="spacer"></div>
+        <span class="chip"><span class="dot"></span>Docker Sandbox</span>
+        <span class="chip">mimo-v2.6-flash</span>
+        <span class="btn">导出报告</span>
+      </div>
+
+      <div class="sumband">
+        <span class="title">fix_leap_year</span>
+        <span class="verdict">Passed · 独立判定</span>
+        <span class="stat"><span class="k">Tokens</span><span class="v">1,872</span></span>
+        <span class="stat"><span class="k">耗时</span><span class="v">25.32<span class="u">s</span></span></span>
+        <span class="stat"><span class="k">LLM 轮次</span><span class="v">4</span></span>
+        <span class="stat"><span class="k">工具调用</span><span class="v">4</span></span>
+        <span class="stat"><span class="k">代码审计</span><span class="v">0<span class="u"> 风险</span></span></span>
+      </div>
+
+      <div class="cols">
+        <aside class="rail">
+          <h3>Attempts · 11</h3>
+          <div class="filters"><span class="fchip on">全部 11</span><span class="fchip">通过 11</span><span class="fchip">失败 0</span></div>
+          <div class="att"><span class="st"></span><div class="info"><div class="t">fix_average_empty</div><div class="m">1,664 tok</div></div></div>
+          <div class="att"><span class="st"></span><div class="info"><div class="t">fix_binary_search_boundary</div><div class="m">2,166 tok</div></div></div>
+          <div class="att"><span class="st"></span><div class="info"><div class="t">fix_clamp_swapped</div><div class="m">1,672 tok</div></div></div>
+          <div class="att"><span class="st"></span><div class="info"><div class="t">fix_dedupe_order</div><div class="m">1,712 tok</div></div></div>
+          <div class="att"><span class="st"></span><div class="info"><div class="t">fix_flatten_deep</div><div class="m">1,898 tok</div></div></div>
+          <div class="att"><span class="st"></span><div class="info"><div class="t">fix_kadane_negative</div><div class="m">2,230 tok</div></div></div>
+          <div class="att active"><span class="st"></span><div class="info"><div class="t">fix_leap_year</div><div class="m">1,872 tok · 25.3s</div></div></div>
+          <div class="att"><span class="st"></span><div class="info"><div class="t">fix_palindrome_normalize</div><div class="m">1,696 tok</div></div></div>
+          <div class="att"><span class="st"></span><div class="info"><div class="t">fix_password_strength</div><div class="m">2,115 tok</div></div></div>
+          <div class="att"><span class="st"></span><div class="info"><div class="t">fix_range_sum_offbyone</div><div class="m">1,735 tok</div></div></div>
+          <div class="att"><span class="st"></span><div class="info"><div class="t">fix_word_count_case</div><div class="m">2,955 tok</div></div></div>
+        </aside>
+
+        <section class="center">
+          <div class="controls">
+            <span class="cbtn primary" title="播放">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><path d="M2.5 1.5 10.5 6 2.5 10.5Z"/></svg>
+            </span>
+            <span class="cbtn" title="上一步">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 3 5 8l5 5"/></svg>
+            </span>
+            <span class="cbtn" title="下一步">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3l5 5-5 5"/></svg>
+            </span>
+            <span class="cbtn" title="回到开头">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3v10M13 3 6 8l7 5"/></svg>
+            </span>
+            <div class="scrub">
+              <span class="tick" style="left:5.9%"></span><span class="tick" style="left:18.8%"></span>
+              <span class="tick" style="left:24.4%"></span><span class="tick" style="left:95.3%"></span>
+              <div class="track"></div><div class="fill"></div><div class="head"></div>
+            </div>
+            <span class="speed">1×</span>
+            <span class="clock"><b>00:04.85</b> / 00:25.32</span>
+          </div>
+
+          <div class="wf">
+            <div class="wf-head"><div class="axis">
+              <span style="left:0%">0s</span><span style="left:19.6%">5s</span><span style="left:39.2%">10s</span>
+              <span style="left:58.8%">15s</span><span style="left:78.4%">20s</span><span style="left:96%">25s</span>
+            </div></div>
+            <div class="wf-body">
+              <div class="grid"><i style="left:calc(150px + (100% - 164px)*0)"></i><i style="left:calc(150px + (100% - 164px)*0.196)"></i><i style="left:calc(150px + (100% - 164px)*0.392)"></i><i style="left:calc(150px + (100% - 164px)*0.588)"></i><i style="left:calc(150px + (100% - 164px)*0.784)"></i><i style="left:calc(150px + (100% - 164px)*0.98)"></i></div>
+
+              <div class="row" style="--i:0">
+                <div class="gut"><span class="sq">#1</span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 1.8 14.2 8 8 14.2 1.8 8Z"/></svg>
+                  <span class="lb">模型调用</span></div>
+                <div class="track"><span class="lane"></span><span class="bar llm" style="left:1.6%;width:4.3%"></span>
+                  <span class="tok" style="left:6.4%">229 tok</span></div>
+              </div>
+              <div class="row" style="--i:1">
+                <div class="gut"><span class="sq">#2</span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.4" fill="currentColor" stroke="none"/></svg>
+                  <span class="lb">读取 src/utils.py</span></div>
+                <div class="track"><span class="lane"></span><span class="marker mk-tool" style="left:5.9%"></span></div>
+              </div>
+              <div class="row" style="--i:2">
+                <div class="gut"><span class="sq">#3</span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 1.8 14.2 8 8 14.2 1.8 8Z"/></svg>
+                  <span class="lb">模型调用</span></div>
+                <div class="track"><span class="lane"></span><span class="bar llm" style="left:5.9%;width:12.8%"></span>
+                  <span class="tok" style="left:19.2%">420 tok</span></div>
+              </div>
+              <div class="row" style="--i:3">
+                <div class="gut"><span class="sq">#4</span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 4h11M2.5 8h7M2.5 12h11"/></svg>
+                  <span class="lb">改动 src/utils.py</span></div>
+                <div class="track"><span class="lane"></span><span class="marker mk-diff" style="left:18.8%"></span></div>
+              </div>
+              <div class="row" style="--i:4">
+                <div class="gut"><span class="sq">#5</span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.4" fill="currentColor" stroke="none"/></svg>
+                  <span class="lb">写入修复</span></div>
+                <div class="track"><span class="lane"></span><span class="marker mk-tool" style="left:18.9%"></span></div>
+              </div>
+              <div class="row" style="--i:5">
+                <div class="gut"><span class="sq">#6</span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 1.8 14.2 8 8 14.2 1.8 8Z"/></svg>
+                  <span class="lb">模型调用</span></div>
+                <div class="track"><span class="lane"></span><span class="bar llm" style="left:18.9%;width:4.1%"></span>
+                  <span class="tok" style="left:23.5%">546 tok</span></div>
+              </div>
+              <div class="row" style="--i:6">
+                <div class="gut"><span class="sq">#7</span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5 7 8l-4 3.5M9.5 11.5H13"/></svg>
+                  <span class="lb">自测 run_tests</span></div>
+                <div class="track"><span class="lane"></span><span class="bar cmd" style="left:22.9%;width:1.5%"></span></div>
+              </div>
+              <div class="row gap" style="--i:7"></div>
+              <div class="row active" style="--i:8">
+                <div class="gut"><span class="sq">#9</span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 1.8 14.2 8 8 14.2 1.8 8Z"/></svg>
+                  <span class="lb">模型调用 · 思考 18.1s</span></div>
+                <div class="track"><span class="lane"></span><span class="bar llm" style="left:24.4%;width:70.8%;outline:1px solid var(--accent-deep)"></span>
+                  <span class="tok" style="left:50%;top:1px;background:var(--paper);color:var(--ink);border:1px solid var(--line);padding:0 7px">677 tok · 思考最久</span></div>
+              </div>
+              <div class="row" style="--i:9">
+                <div class="gut"><span class="sq">#10</span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.4" fill="currentColor" stroke="none"/></svg>
+                  <span class="lb">提交 finish</span></div>
+                <div class="track"><span class="lane"></span><span class="marker mk-tool" style="left:95.3%"></span></div>
+              </div>
+              <div class="row" style="--i:10">
+                <div class="gut"><span class="sq">#11</span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5 7 8l-4 3.5M9.5 11.5H13"/></svg>
+                  <span class="lb">权威判定（新容器）</span></div>
+                <div class="track"><span class="lane"></span><span class="bar verdict" style="left:95.2%;width:3.5%"></span></div>
+              </div>
+              <div class="row" style="--i:11">
+                <div class="gut"><span class="sq">#12</span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/><path d="M5.3 8.2 7.2 10 10.8 6.4"/></svg>
+                  <span class="lb">判定 3/3 通过</span></div>
+                <div class="track"><span class="lane"></span><span class="marker mk-run" style="left:98.8%"></span></div>
+              </div>
+              <div class="playhead"></div>
+            </div>
+            <div class="wf-foot">
+              <span class="li"><span class="sw" style="background:var(--accent)"></span>模型调用</span>
+              <span class="li"><span class="sw" style="background:var(--ink)"></span>工具动作</span>
+              <span class="li"><span class="sw" style="border:2px solid var(--accent);background:var(--paper);transform:rotate(45deg)"></span>文件改动</span>
+              <span class="li"><span class="sw" style="background:linear-gradient(90deg,rgba(214,69,34,.10),rgba(214,69,34,.42));border-left:2.5px solid var(--accent)"></span>命令执行</span>
+              <span class="li"><span class="sw" style="background:linear-gradient(90deg,rgba(31,79,70,.10),rgba(31,79,70,.38));border-left:2.5px solid var(--teal)"></span>权威判定</span>
+              <span class="li note">条长 = 实际耗时 · 间隙 = 等待与传输</span>
+            </div>
+          </div>
+        </section>
+
+        <aside class="detail">
+          <div class="tabs"><span class="tab on">事件详情</span><span class="tab">尝试元数据</span></div>
+          <div class="body">
+            <div class="ev-head">
+              <svg class="ic" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 4h11M2.5 8h7M2.5 12h11"/></svg>
+              <b>文件改动 · #4</b><span class="tm">04:53:35.035</span>
+            </div>
+            <div class="kv"><span class="k">File</span><span class="v">src/utils.py</span></div>
+            <div class="kv"><span class="k">Trigger</span><span class="v">write_file（第 2 轮）</span></div>
+            <div class="console">
+              <div class="cap"><span>DIFF · SRC/UTILS.PY</span><span>UNIFIED</span></div>
+              <div class="ln meta">--- a/src/utils.py</div>
+              <div class="ln meta">+++ b/src/utils.py</div>
+              <div class="ln meta">@@ -1,3 +1,7 @@</div>
+              <div class="ln ctx"> def is_leap_year(year: int) -&gt; bool:</div>
+              <div class="ln del">-    """判断闰年（存在缺陷：未正确处理整百年份）。"""</div>
+              <div class="ln add">+    """判断闰年：能被4整除但不能被100整除，或能被400整除。"""</div>
+              <div class="ln add">+    if year % 400 == 0:</div>
+              <div class="ln add">+        return True</div>
+              <div class="ln add">+    if year % 100 == 0:</div>
+              <div class="ln add">+        return False</div>
+              <div class="ln ctx">     return year % 4 == 0</div>
+            </div>
+            <div class="audit">
+              <div class="head">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 1.8 13 3.6v4.2c0 3.4-2.2 5.6-5 6.6-2.8-1-5-3.2-5-6.6V3.6Z"/><path d="M5.6 8.1 7.3 9.8 10.5 6.4"/></svg>
+                <b>代码审计</b><span class="n">0 风险项</span>
+              </div>
+              <div class="sub">语法检查通过 · 无硬编码敏感信息 · 随改动实时生成，随轨迹留痕</div>
+              <div class="note">审计结论挂在当步改动上，可回溯、可对照其后的测试结果</div>
+            </div>
+            <div class="link">
+              <div class="row"><span class="st"></span>随后 run_tests：3/3 通过（容器内自测）</div>
+              <div class="row"><span class="st"></span>最终判定：一次性新鲜容器 · 独立通过</div>
+            </div>
+          </div>
+          <div class="metafoot">
+            ATTEMPT b41a9b9fde894ba390445ac66e719a36<br>
+            RUN exp-20261108-125155 · SANDBOX DOCKER<br>
+            04:53:30.233 → 04:53:55.556 UTC
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <section class="notes rise d2">
+    <div class="kicker">Design Notes · 四个决策</div>
+    <div class="grid2">
+      <div class="item">
+        <span class="idx">01</span>
+        <b>三区工作台</b>
+        <p>左栏尝试列表（带筛选与 hover 红条）、中栏回放主视图、右栏事件详情同屏常驻——详情与时间线不再上下滚动。窄屏按规范 720px 降级单列。</p>
+      </div>
+      <div class="item">
+        <span class="idx">02</span>
+        <b>执行瀑布图</b>
+        <p>横轴真实时间，条长 = 实际耗时。模型「思考 18.1 秒」从一行小字变成占满 71% 宽度的橙色长条——Agent 的时间预算一眼可读，也是论文配图的直接来源。</p>
+      </div>
+      <div class="item">
+        <span class="idx">03</span>
+        <b>墨色事件编码</b>
+        <p>放弃彩虹多色：橙红 = 模型调用（主角，稀缺资源），墨色 = 工具，橙红渐变数据条 = 命令，墨绿 = 判定命中。类型同时用形状区分（菱形/圆环/方点），不依赖颜色单一通道。</p>
+      </div>
+      <div class="item">
+        <span class="idx">04</span>
+        <b>审计内联</b>
+        <p>代码审计挂在当步改动上：「改了什么 → 当步审计结论 → 之后的测试结果」同一屏讲完。diff 用墨色控制台面板反白呈现，贴合台账气质。</p>
+      </div>
+    </div>
+    <p class="src">数据来源 experiments/exp-20261108-125155.db · attempt b41a9b9f · mimo-v2.6-flash × Docker 沙箱 · 2026-11-08 真实实验。本稿为静态视觉稿，播放/步进/筛选等交互在方向确认后于真实前端实现。字体经 Google Fonts 加载，离线时按规范回退系统衬线/黑体/等宽。</p>
+  </section>
+</div>
+</body>
+</html>
