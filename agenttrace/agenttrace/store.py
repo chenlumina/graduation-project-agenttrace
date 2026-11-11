@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS events (
     parent_id  TEXT,
     data       TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_events_attempt_seq ON events(attempt_id, seq);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_attempt_seq ON events(attempt_id, seq);
 """
 
 _ATTEMPT_COLS = "attempt_id, task_id, agent, model, status, started_at, finished_at, meta"
@@ -53,7 +53,29 @@ class TraceStore:
     def __init__(self, path: str | Path):
         self._conn = sqlite3.connect(str(path))
         self._conn.executescript(_SCHEMA)
+        self._ensure_unique_seq_index()
         self._conn.commit()
+
+    def _ensure_unique_seq_index(self) -> None:
+        """旧库迁移（R-07）：早期版本的 idx_events_attempt_seq 是普通索引，
+        CREATE UNIQUE INDEX IF NOT EXISTS 不会替换它。这里显式检测并重建，
+        保证 (attempt_id, seq) 唯一约束对历史数据库同样生效。"""
+        rows = self._conn.execute("PRAGMA index_list('events')").fetchall()
+        for row in rows:
+            # row: (seq, name, unique, origin, partial)
+            if row[1] == "idx_events_attempt_seq":
+                if row[2]:
+                    return  # 已是唯一索引
+                self._conn.execute("DROP INDEX idx_events_attempt_seq")
+                break
+        try:
+            self._conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_events_attempt_seq ON events(attempt_id, seq)"
+            )
+        except sqlite3.IntegrityError as e:
+            raise TraceValidationError(
+                f"历史库存在重复的 (attempt_id, seq)，无法建立唯一索引，请先清理数据: {e}"
+            ) from e
 
     def begin_attempt(self, meta: AttemptMeta) -> str:
         self._conn.execute(

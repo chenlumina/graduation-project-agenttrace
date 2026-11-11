@@ -9,7 +9,7 @@
 | 编号 | 问题 | 级别 | 状态 | 完成日期 | 验证方式 |
 |---|---|---|---|---|---|
 | R-01 | 题目口径不统一（分布式链路追踪名不副实） | 阻断 | ✅ 已完成 | 2026-11-11 | 全仓库文本核查 |
-| R-07 | events 表 seq 无唯一约束 | 严重 | 进行中 | — | — |
+| R-07 | events 表 seq 无唯一约束 | 严重 | ✅ 已完成 | 2026-11-11 | test_store 9 项通过 |
 | R-10 | file_diff parent_id 层级错位 | 一般 | 待修复 | — | — |
 | R-09 | 事件缺少统一耗时字段 | 严重 | 待修复 | — | — |
 | R-11 | 缺少采样参数与版本记录 | 严重 | 待修复 | — | — |
@@ -31,3 +31,27 @@
   - 全仓库 `*.md / *.py / *.txt` 检索：无旧口径残留。
 - **结论**：仓库、开题、选题三处口径已一致，无需代码改动。论文写作时沿用此口径即可。
 - **遗留说明**：R-02（OTel GenAI 语义映射）随本项决策降为 P1 文档层工作，后续以"自定义事件 → OTel GenAI span 映射表"形式补充，不改事件模型。
+
+---
+
+## R-07　events 表 seq 唯一约束（严重，P1）
+
+- **改动**：
+  - `store.py`：`idx_events_attempt_seq` 改为 `CREATE UNIQUE INDEX`；新增 `_ensure_unique_seq_index()`，旧库打开时检测普通索引并自动 DROP 重建（历史库存在重复数据时抛出明确 TraceValidationError）。
+  - `tests/test_store.py`：新增 3 项回归——数据库层重复 seq 拒写、`append_event` 重复 seq 抛 TraceValidationError 且不污染已有事件、旧库普通索引自动迁移为 UNIQUE。
+- **验证**：`test_store` 9 项全过；全量 118 项通过。
+- **遗留说明**：报告附加建议的 `events.attempt_id` 外键约束需重建表（SQLite 不支持 ALTER 加外键），列入后续存储迁移项，本次未做。
+- **commit**：`fix(R-07)`。
+
+---
+
+## R-10　file_diff parent_id 层级修正（一般，P1）
+
+- **改动**：
+  - `agent.py`（本地通道）：write_file 的 diff/audit 先暂存 `pending_diff`，`tool_call` 落库后再以其 id 为 parent 落 `file_diff`，形成 llm_call → tool_call → file_diff 三层结构。
+  - `mcptools.py`（MCP 通道）：同步修正，与原留痕链路注释（tool_call → file_diff）保持一致。
+  - `model.py`：更新 parent_id 层级口径文档。
+  - `tests/test_agent_e2e.py`：新增 `test_file_diff_nested_under_tool_call` 断言三层归属。
+- **影响**：前端回放树由 parent_id 驱动，改动后文件变更自动缩进在对应工具调用下，无需前端改动。
+- **验证**：全量 118 项通过（含新增回归）。
+- **commit**：`fix(R-10)`。
