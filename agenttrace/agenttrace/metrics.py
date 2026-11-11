@@ -46,6 +46,29 @@ def compute_metrics(events: list[TraceEvent]) -> dict[str, Any]:
     prompt = sum(int(e.data.get("usage", {}).get("prompt_tokens", 0)) for e in llm_calls)
     completion = sum(int(e.data.get("usage", {}).get("completion_tokens", 0)) for e in llm_calls)
 
+    # R-09：统一耗时归因——各阶段耗时占比 + 最慢步骤 TopN
+    llm_time = sum(int(e.data.get("duration_ms", 0)) for e in llm_calls)
+    tool_time = sum(int(e.data.get("duration_ms", 0)) for e in tool_calls)
+    command_events = [e for e in events if e.type == "command_exec"]
+    command_time = sum(int(e.data.get("duration_ms", 0)) for e in command_events)
+    accounted = llm_time + tool_time
+    # 最慢步骤 TopN（llm_call / tool_call / command_exec 混合排序，标注类型供人工判读；
+    # command_exec 为 run_tests/run_command 的子集，占比口径不重复计入）
+    timed = [
+        e for e in events
+        if e.type in ("llm_call", "tool_call", "command_exec") and e.data.get("duration_ms")
+    ]
+    slowest_steps = [
+        {
+            "seq": e.seq,
+            "type": e.type,
+            "name": e.data.get("tool") or e.data.get("model")
+            or (" ".join(str(c) for c in e.data.get("cmd", []))[:80] if e.type == "command_exec" else ""),
+            "duration_ms": int(e.data["duration_ms"]),
+        }
+        for e in sorted(timed, key=lambda x: int(x.data["duration_ms"]), reverse=True)[:5]
+    ]
+
     passed = bool(run_results and run_results[-1].data["passed"])
     return {
         "llm_call_count": len(llm_calls),
@@ -60,7 +83,17 @@ def compute_metrics(events: list[TraceEvent]) -> dict[str, Any]:
         "prompt_tokens": prompt,
         "completion_tokens": completion,
         "total_tokens": prompt + completion,
-        "llm_time_ms": sum(int(e.data.get("duration_ms", 0)) for e in llm_calls),
+        "llm_time_ms": llm_time,
+        "tool_time_ms": tool_time,
+        "command_time_ms": command_time,
+        "time_breakdown": {
+            "llm_ms": llm_time,
+            "tool_ms": tool_time,
+            "command_ms": command_time,  # 子集信息：已含于 tool_ms，不重复计入占比
+            "llm_share": round(llm_time / accounted, 4) if accounted else 0.0,
+            "tool_share": round(tool_time / accounted, 4) if accounted else 0.0,
+        },
+        "slowest_steps": slowest_steps,
         "error_event_count": len(error_events),
         "audit_total": len(audit_events),
         "audit_denied": sum(1 for e in audit_events if e.data.get("decision") == "deny"),

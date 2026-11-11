@@ -35,6 +35,29 @@ class TestMetrics(unittest.TestCase):
         script(collector)
         return attempt_id
 
+    def test_time_breakdown_and_slowest_steps(self):
+        """R-09：耗时占比与最慢步骤 TopN 的统计口径。"""
+        def script(c):
+            e1 = c.llm_call(model="m", messages=[], response="r",
+                            usage={"prompt_tokens": 10, "completion_tokens": 5}, duration_ms=1000)
+            c.tool_call("run_tests", {}, "x", "ok", parent_id=e1.id, duration_ms=3000)
+            c.command_exec(["pytest"], 0, "o", "", parent_id=e1.id, duration_ms=2900)
+            c.run_result(True, "OK")
+
+        evs = self.store.events(self.collect(script))
+        m = compute_metrics(evs)
+        self.assertEqual(m["llm_time_ms"], 1000)
+        self.assertEqual(m["tool_time_ms"], 3000)
+        self.assertEqual(m["command_time_ms"], 2900)
+        tb = m["time_breakdown"]
+        self.assertEqual(tb["llm_share"], 0.25)   # 1000 / (1000+3000)
+        self.assertEqual(tb["tool_share"], 0.75)
+        self.assertEqual(tb["command_ms"], 2900)  # 子集信息，不计入占比分母
+        self.assertEqual(m["slowest_steps"][0]["type"], "tool_call")
+        self.assertEqual(m["slowest_steps"][0]["duration_ms"], 3000)
+        self.assertEqual(m["slowest_steps"][0]["name"], "run_tests")
+        self.assertEqual(len(m["slowest_steps"]), 3)
+
     def test_clean_pass(self):
         def script(c):
             e1 = c.llm_call(model="m", messages=[], response="r",

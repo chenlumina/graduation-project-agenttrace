@@ -248,9 +248,17 @@ function renderWaterfall() {
             ? `<span class="tok" style="left:${(endPct + 0.8).toFixed(2)}%">${tokTxt}</span>`
             : `<span class="tok" style="left:${((startPct + endPct) / 2).toFixed(2)}%;transform:translateX(-50%);color:var(--paper)">${tokTxt}</span>`;
       } else if (e.type === "command_exec") {
-        const startPct = Math.max(0, pct(prevTs));
-        const w = Math.max(0.6, ((ts - prevTs) / span) * 100);
+        // R-09：优先使用采集侧真实耗时；旧轨迹无 duration_ms 时回退为事件间隔估算
+        const d = e.data.duration_ms != null ? e.data.duration_ms : ts - prevTs;
+        const startPct = Math.max(0, pct(ts - d));
+        const w = Math.max(0.6, (d / span) * 100);
         barHtml = `<span class="bar cmd" style="left:${startPct.toFixed(2)}%;width:${w.toFixed(2)}%"></span>`;
+      } else if (e.type === "tool_call" && e.data.duration_ms != null) {
+        // R-09：工具调用按真实耗时画条（旧轨迹仍回退为 marker 点）
+        const d = e.data.duration_ms;
+        const startPct = Math.max(0, pct(ts - d));
+        const w = Math.max(0.6, (d / span) * 100);
+        barHtml = `<span class="bar tool" style="left:${startPct.toFixed(2)}%;width:${w.toFixed(2)}%"></span>`;
       } else {
         const mk = { tool_call: "mk-tool", file_diff: "mk-diff", run_result: "mk-run", mcp_audit: "mk-audit", error: "mk-err" }[e.type] || "mk-tool";
         barHtml = `<span class="marker ${mk}" style="left:${off.toFixed(2)}%"></span>`;

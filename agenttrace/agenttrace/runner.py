@@ -16,6 +16,7 @@ import json
 import shutil
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -192,9 +193,11 @@ class TaskRunner:
                 agent_error = True
 
             # 最终判定：隔离副本 + 原始隐藏测试（Agent 的篡改无效），fail-closed 判定
+            verdict_t0 = time.monotonic()  # R-09：判定阶段同样统一计时
             test_res = test_runner.run(timeout=180)
             collector.command_exec(
-                test_res["cmd"], test_res["exit_code"], test_res["stdout_tail"], test_res["stderr_tail"]
+                test_res["cmd"], test_res["exit_code"], test_res["stdout_tail"], test_res["stderr_tail"],
+                duration_ms=int((time.monotonic() - verdict_t0) * 1000),
             )
             verdict_output = test_res["stdout_tail"] + "\n" + test_res["stderr_tail"]
             passed = bool(test_res.get("verdict_ok")) and not agent_error

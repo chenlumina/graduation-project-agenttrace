@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -171,6 +172,7 @@ class AuditedMCPClient:
         self, tool: str, args: dict[str, Any], parent_id: str | None = None
     ) -> tuple[str, str, Any]:
         """返回 (status, payload, result)；status ∈ ok / error / denied。"""
+        call_t0 = time.monotonic()  # R-09：MCP 通道与本地通道同一耗时口径
         # 1) 声明比对：未声明的工具一律拒绝
         if not any(d["name"] == tool for d in self.declarations):
             self.collector.emit(
@@ -199,7 +201,10 @@ class AuditedMCPClient:
         try:
             res = self.underlying.call(tool, args)
         except Exception as e:
-            self.collector.tool_call(tool, args, f"MCP 调用异常: {e}", "error", parent_id)
+            self.collector.tool_call(
+                tool, args, f"MCP 调用异常: {e}", "error", parent_id,
+                duration_ms=int((time.monotonic() - call_t0) * 1000),  # R-09
+            )
             return "error", f"MCP 调用异常: {e}", "error"
 
         text = res["text"]
@@ -220,7 +225,10 @@ class AuditedMCPClient:
             flags = detect_injection(text)
             if flags:
                 extra = {"injection_flags": flags}
-        tool_ev = self.collector.tool_call(tool, args, text[:2000], status, parent_id, extra=extra)
+        tool_ev = self.collector.tool_call(
+            tool, args, text[:2000], status, parent_id, extra=extra,
+            duration_ms=int((time.monotonic() - call_t0) * 1000),  # R-09
+        )
         if pending_diff is not None:
             _path, _diff, _audit = pending_diff
             self.collector.file_diff(_path, _diff, tool_ev.id, audit=_audit)

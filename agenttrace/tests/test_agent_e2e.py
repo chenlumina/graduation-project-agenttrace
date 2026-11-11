@@ -66,6 +66,13 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(len(diffs), 1)
         self.assertIn("+", diffs[0].data["diff"])
 
+        # R-09：工具与命令事件必须带真实耗时字段
+        for e in events:
+            if e.type == "command_exec":
+                self.assertIsNotNone(e.data.get("duration_ms"))
+            if e.type == "tool_call" and e.data["tool"] != "finish":
+                self.assertIsNotNone(e.data.get("duration_ms"))
+
         # ScriptedLLM 每轮固定 120+40 token，验证统计口径
         usage = [e.data["usage"] for e in events if e.type == "llm_call"]
         self.assertEqual(sum(u["prompt_tokens"] for u in usage), 4 * 120)

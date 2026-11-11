@@ -126,6 +126,7 @@ main{display:grid;grid-template-columns:256px minmax(0,1fr) 396px;min-height:cal
 .bar{position:absolute;top:4px;height:10px}
 .bar.llm{background:var(--accent)}
 .bar.cmd{background:linear-gradient(90deg,rgba(214,69,34,.10),rgba(214,69,34,.42));border-left:2.5px solid var(--accent)}
+.bar.tool{background:linear-gradient(90deg,rgba(31,79,70,.06),rgba(31,79,70,.22));border-left:2px solid var(--teal)}
 .bar.verdict{background:linear-gradient(90deg,rgba(31,79,70,.10),rgba(31,79,70,.38));border-left:2.5px solid var(--teal)}
 .marker{position:absolute;top:5px;width:9px;height:9px;background:var(--paper)}
 .mk-tool{border:2px solid var(--ink);border-radius:50%}

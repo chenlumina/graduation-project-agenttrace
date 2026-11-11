@@ -233,6 +233,7 @@ class MiniAgent:
                 # R-10：write_file 的 diff 暂存，待 tool_call 落库后挂为其子事件，
                 # 形成 llm_call → tool_call → file_diff 三层结构（改动可归属到具体工具调用）
                 pending_diff: tuple[str, str, Any] | None = None
+                tool_t0 = time.monotonic()  # R-09：工具执行统一计时
                 try:
                     if tool not in KNOWN_TOOLS:
                         result = f"未知工具: {tool}"
@@ -272,6 +273,7 @@ class MiniAgent:
                             )
                             status = "ok"
                         elif tool == "run_tests":
+                            cmd_t0 = time.monotonic()  # R-09
                             if test_runner is not None:
                                 res = test_runner.run(timeout=120)
                             else:
@@ -279,6 +281,7 @@ class MiniAgent:
                             collector.command_exec(
                                 res["cmd"], res["exit_code"], res["stdout_tail"], res["stderr_tail"],
                                 parent_id=ev.id,
+                                duration_ms=int((time.monotonic() - cmd_t0) * 1000),
                             )
                             result = res
                             payload = wrap_untrusted(
@@ -297,10 +300,12 @@ class MiniAgent:
                                         for p in parts
                                     ]
                                 cmd = parts
+                            cmd_t0 = time.monotonic()  # R-09
                             res = workspace.run([str(c) for c in cmd])
                             collector.command_exec(
                                 res["cmd"], res["exit_code"], res["stdout_tail"], res["stderr_tail"],
                                 parent_id=ev.id,
+                                duration_ms=int((time.monotonic() - cmd_t0) * 1000),
                             )
                             result = res
                             payload = wrap_untrusted(
@@ -311,7 +316,10 @@ class MiniAgent:
                     result = f"工具执行失败: {type(e).__name__}: {e}"
                     payload = result
                     status = "error"
-                tool_ev = collector.tool_call(tool, args, result, status, parent_id=ev.id, extra=extra)
+                tool_ev = collector.tool_call(
+                    tool, args, result, status, parent_id=ev.id, extra=extra,
+                    duration_ms=int((time.monotonic() - tool_t0) * 1000),  # R-09
+                )
                 if pending_diff is not None:  # R-10：file_diff 归属到产生它的 tool_call 之下
                     _path, _diff, _audit = pending_diff
                     collector.file_diff(_path, _diff, parent_id=tool_ev.id, audit=_audit)

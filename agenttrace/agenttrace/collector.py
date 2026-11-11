@@ -53,10 +53,13 @@ class TraceCollector:
     def tool_call(
         self, tool: str, args: dict[str, Any], result: Any, status: str,
         parent_id: Optional[str] = None, extra: Optional[dict[str, Any]] = None,
+        duration_ms: Optional[int] = None,
     ) -> TraceEvent:
         data: dict[str, Any] = {
             "tool": tool, "args": args, "result": result, "status": status,
         }
+        if duration_ms is not None:
+            data["duration_ms"] = duration_ms  # R-09：统一耗时口径
         if extra:
             # 只允许补充扩展字段，不允许覆盖必需字段
             data.update({k: v for k, v in extra.items() if k not in data})
@@ -89,12 +92,14 @@ class TraceCollector:
         stdout_tail: str,
         stderr_tail: str,
         parent_id: Optional[str] = None,
+        duration_ms: Optional[int] = None,
     ) -> TraceEvent:
-        return self.emit(
-            "command_exec",
-            {"cmd": cmd, "exit_code": exit_code, "stdout_tail": stdout_tail, "stderr_tail": stderr_tail},
-            parent_id,
-        )
+        data: dict[str, Any] = {
+            "cmd": cmd, "exit_code": exit_code, "stdout_tail": stdout_tail, "stderr_tail": stderr_tail,
+        }
+        if duration_ms is not None:
+            data["duration_ms"] = duration_ms  # R-09：统一耗时口径
+        return self.emit("command_exec", data, parent_id)
 
     def run_result(self, passed: bool, output_tail: str) -> TraceEvent:
         return self.emit("run_result", {"passed": passed, "output_tail": output_tail})

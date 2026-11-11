@@ -11,7 +11,7 @@
 | R-01 | 题目口径不统一（分布式链路追踪名不副实） | 阻断 | ✅ 已完成 | 2026-11-11 | 全仓库文本核查 |
 | R-07 | events 表 seq 无唯一约束 | 严重 | ✅ 已完成 | 2026-11-11 | test_store 9 项通过 |
 | R-10 | file_diff parent_id 层级错位 | 一般 | 待修复 | — | — |
-| R-09 | 事件缺少统一耗时字段 | 严重 | 待修复 | — | — |
+| R-09 | 事件缺少统一耗时字段 | 严重 | ✅ 已完成 | 2026-11-11 | 全量 119 项通过 |
 | R-11 | 缺少采样参数与版本记录 | 严重 | 待修复 | — | — |
 | R-15 | 解析失败直接终止，策略不一致 | 严重 | 待修复 | — | — |
 | R-14 | 失败归因依赖中文文本匹配 | 严重 | 待修复 | — | — |
@@ -42,6 +42,21 @@
 - **验证**：`test_store` 9 项全过；全量 118 项通过。
 - **遗留说明**：报告附加建议的 `events.attempt_id` 外键约束需重建表（SQLite 不支持 ALTER 加外键），列入后续存储迁移项，本次未做。
 - **commit**：`fix(R-07)`。
+
+---
+
+## R-09　全事件统一耗时字段（严重，P1）
+
+- **改动**：
+  - `collector.py`：`tool_call` / `command_exec` 增加 `duration_ms` 参数（可选字段，旧轨迹兼容）。
+  - `agent.py`（本地通道）：工具执行统一计时（`tool_t0`），run_tests / run_command 命令单独计时，tool_call 落库携带真实耗时。
+  - `mcptools.py`（MCP 通道）：`call()` 全程计时，与本地通道同一口径（denied 未执行，不计耗时）。
+  - `runner.py`：最终判定阶段的 command_exec 同样计时。
+  - `metrics.py`：新增 `tool_time_ms` / `command_time_ms` / `time_breakdown`（llm/tool 占比，command 为子集不重复计入）/ `slowest_steps`（最慢步骤 TopN，标注类型）。
+  - 前端 `static/app.js` + `style.css`：瀑布图 command_exec 优先用真实 `duration_ms`（旧轨迹回退事件间隔估算）；tool_call 有耗时时画条形（新增 `.bar.tool` 样式）。
+  - 测试：`test_metrics.py` 新增耗时占比与 TopN 口径测试；`test_agent_e2e.py` 断言工具/命令事件必须带耗时字段。
+- **验证**：全量 119 项通过。
+- **commit**：`fix(R-09)`。
 
 ---
 
