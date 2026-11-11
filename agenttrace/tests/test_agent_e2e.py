@@ -147,6 +147,70 @@ class AlwaysEmptyLLM:
         return LLMResponse("", self.model, 3, 0)
 
 
+class ParseFailOnceLLM:
+    """第一次返回无法解析的自然语言回复，之后透传给脚本 LLM（R-15 场景）。"""
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.model = inner.model
+        self.calls = 0
+
+    def chat(self, messages):
+        self.calls += 1
+        if self.calls == 1:
+            return LLMResponse("我认为应该修改闰年判断的逻辑……", self.model, 5, 5)
+        return self.inner.chat(messages)
+
+
+class AlwaysBadFormatLLM:
+    """始终返回无法解析的回复（解析重试无法消除）。"""
+
+    model = "bad-format-model"
+
+    def chat(self, messages):
+        return LLMResponse("这不是JSON，只是一段解释文字。", self.model, 5, 5)
+
+
+class TestParseErrorRetry(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = TraceStore(Path(self.tmp.name) / "traces.db")
+        self.task = TaskPackage.load(TASK_DIR)
+
+    def tearDown(self):
+        self.store.close()
+        self.tmp.cleanup()
+
+    def test_parse_error_retried_then_passes(self):
+        """R-15：解析失败重试并反馈修正提示后，任务最终仍应通过。"""
+        res = TaskRunner(self.store).run(
+            self.task, ParseFailOnceLLM(ScriptedLLM(GOOD_ACTIONS))
+        )
+        self.assertTrue(res.passed)
+        self.assertEqual(res.status, "passed")
+        events = self.store.events(res.attempt_id)
+        parse_errors = [
+            e for e in events
+            if e.type == "error" and e.data.get("error_code") == "parse_error"
+        ]
+        self.assertEqual(len(parse_errors), 1)
+        # 修正提示必须反馈给模型（对话历史中出现解析失败提示）
+        llm_events = [e for e in events if e.type == "llm_call"]
+        self.assertGreaterEqual(len(llm_events), 2)
+
+    def test_persistent_parse_error_marks_error(self):
+        """R-15：持续解析失败在 MAX_PARSE_RETRIES 次后判为 error，不再首轮即死。"""
+        res = TaskRunner(self.store).run(self.task, AlwaysBadFormatLLM(), max_turns=8)
+        self.assertEqual(res.status, "error")
+        self.assertFalse(res.passed)
+        events = self.store.events(res.attempt_id)
+        parse_errors = [
+            e for e in events
+            if e.type == "error" and e.data.get("error_code") == "parse_error"
+        ]
+        self.assertEqual(len(parse_errors), 3)  # 3 次重试后才放弃
+
+
 class TestEmptyResponseRetry(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

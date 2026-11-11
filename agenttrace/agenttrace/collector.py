@@ -110,5 +110,11 @@ class TraceCollector:
     def run_result(self, passed: bool, output_tail: str) -> TraceEvent:
         return self.emit("run_result", {"passed": passed, "output_tail": output_tail})
 
-    def error(self, message: str, parent_id: Optional[str] = None) -> TraceEvent:
-        return self.emit("error", {"message": message}, parent_id)
+    def error(
+        self, message: str, parent_id: Optional[str] = None, code: Optional[str] = None,
+    ) -> TraceEvent:
+        """code 为结构化错误码（R-14 铺垫）：机器可读枚举，与展示文案分离。"""
+        data: dict[str, Any] = {"message": message}
+        if code:
+            data["error_code"] = code
+        return self.emit("error", data, parent_id)

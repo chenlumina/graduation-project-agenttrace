@@ -70,6 +70,14 @@ def compute_metrics(events: list[TraceEvent]) -> dict[str, Any]:
     ]
 
     passed = bool(run_results and run_results[-1].data["passed"])
+
+    # R-15：重试过程指标——解析失败 / 空回复各自的重试计数（读结构化 error_code）
+    parse_retries = sum(
+        1 for e in error_events if e.data.get("error_code") == "parse_error"
+    )
+    empty_retries = sum(
+        1 for e in error_events if e.data.get("error_code") == "empty_response"
+    )
     return {
         "llm_call_count": len(llm_calls),
         "tool_call_count": len(tool_calls),
@@ -95,6 +103,8 @@ def compute_metrics(events: list[TraceEvent]) -> dict[str, Any]:
         },
         "slowest_steps": slowest_steps,
         "error_event_count": len(error_events),
+        "parse_error_retries": parse_retries,
+        "empty_response_retries": empty_retries,
         "audit_total": len(audit_events),
         "audit_denied": sum(1 for e in audit_events if e.data.get("decision") == "deny"),
         "code_audit_high": sum(

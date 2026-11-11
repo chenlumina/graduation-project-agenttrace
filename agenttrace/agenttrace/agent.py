@@ -48,6 +48,16 @@ KNOWN_TOOLS = ("read_file", "write_file", "run_tests", "run_command", "finish")
 #: 连续空回复的最大重试次数（超过则本次尝试判为失败）
 MAX_EMPTY_RETRIES = 3
 
+#: 动作解析失败的最大重试次数（R-15：与空回复同一策略，不直接终止）
+MAX_PARSE_RETRIES = 3
+
+#: 解析失败重试时反馈给模型的修正指令（R-15）
+_PARSE_RETRY_HINT = (
+    "上一条回复不是合法的 JSON 动作（解析失败）。请只输出一个 JSON 对象，"
+    '格式 {"tool":"read_file|write_file|run_tests|run_command|finish","args":{...}}，'
+    "不要附加解释文字、代码围栏或多余符号。"
+)
+
 #: 返回内容属于"外部数据"的工具：其输出回灌模型前必须包裹 <untrusted_data>
 _UNTRUSTED_PAYLOAD_TOOLS = ("read_file", "write_file", "run_tests", "run_command")
 
@@ -177,6 +187,7 @@ class MiniAgent:
         ]
         finished = False
         empty_retries = 0
+        parse_retries = 0
 
         for _ in range(self.max_turns):
             t0 = time.monotonic()
@@ -199,7 +210,8 @@ class MiniAgent:
             if not (resp.content or "").strip():
                 empty_retries += 1
                 collector.error(
-                    f"模型返回空回复（empty_response），第 {empty_retries} 次重试", parent_id=ev.id
+                    f"模型返回空回复（empty_response），第 {empty_retries} 次重试",
+                    parent_id=ev.id, code="empty_response",
                 )
                 if empty_retries >= MAX_EMPTY_RETRIES:
                     raise RuntimeError("empty_response")
@@ -211,8 +223,19 @@ class MiniAgent:
                 tool = action["tool"]
                 args: dict[str, Any] = action.get("args", {}) or {}
             except (ValueError, KeyError, TypeError) as e:
-                collector.error(f"无法解析 Agent 动作: {e}", parent_id=ev.id)
-                raise ValueError("agent action parse error") from e
+                # R-15：解析失败与空回复同一重试策略——反馈解析错误给模型要求修正，
+                # 不再直接终止整个尝试（避免格式较松散的模型被过早判负）
+                parse_retries += 1
+                collector.error(
+                    f"无法解析 Agent 动作（parse_error，第 {parse_retries} 次重试）: {e}",
+                    parent_id=ev.id, code="parse_error",
+                )
+                if parse_retries >= MAX_PARSE_RETRIES:
+                    raise ValueError("agent action parse error") from e
+                messages.append({"role": "assistant", "content": resp.content})
+                messages.append({"role": "user", "content": _PARSE_RETRY_HINT})
+                continue
+            parse_retries = 0
 
             messages.append({"role": "assistant", "content": resp.content})
 
