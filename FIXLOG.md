@@ -18,7 +18,7 @@
 | R-08 | llm_call 全量落库，存储平方级膨胀 | 严重 | ✅ 已完成 | 2026-11-11 | 全量 126 项通过 |
 | R-03 | 任务集天花板效应 | 阻断 | ✅ 已完成 | 2026-11-11 | taskset 参照解回归全过 |
 | R-04 | 实验统计口径不足 | 严重 | ✅ 已完成 | 2026-11-11 | 全量 127 项通过 |
-| R-05 | 缺少故障注入实验 | 严重 | 待修复 | — | — |
+| R-05 | 缺少故障注入实验 | 严重 | ✅ 已完成 | 2026-11-11 | 全量 133 项通过 |
 
 ---
 
@@ -88,6 +88,21 @@
 - **注意**：统计生效需要真实实验跑 `repeat≥3`（报告路线图阶段一实验矩阵：≥3 模型 × 全任务 × 3 次），建议命令 `python atp.py experiment --models a,b,c --repeat 3 --docker`。
 - **验证**：全量 127 项通过。
 - **commit**：`feat(R-04)`。
+
+---
+
+## R-05　故障注入实验机制（严重，P0）
+
+- **改动**：
+  - 新模块 `faults.py`：`FaultProfile`（slow_tool_ms / flaky_rate / inject_instruction，可序列化进 meta）+ 预置场景（baseline / slow_tool / flaky_tool / prompt_injection）。
+  - `agent.py`（本地通道）注入三处：工具执行前 sleep（计入真实耗时）、以 flaky_rate 概率抛 fault（走工具失败路径、Agent 可重试、结构化 tool_error 留痕）、read_file 内容前插提示注入样本（触发 injection_flags 留痕）。
+  - `runner.py`：`TaskRunner.run` 增加 `faults` 参数转发 MiniAgent；扰动配置记入 attempt.meta（实验可归因）。
+  - `experiments.py`：`run_experiment` 增加 `fault` 参数（profile 名或实例），meta 打标、报告标注 `local+fault:<name>`。
+  - CLI：`atp.py experiment --fault slow_tool|flaky_tool|prompt_injection`。
+  - 新增 `tests/test_faults.py`（6 项）——基线无信号（对照组）+ 三类扰动各自产生可观测信号：慢工具 → tool_time_ms ≥ 3×延迟且 tool_share > 0.9、TopN 为 tool_call；必失败工具 → invalid_tool_rate=0.75 且 error_code=tool_error 留痕；注入样本 → injection_flags 命中（判定不受影响，验证 R-21"留痕不阻断"定位）。
+- **效果**：这组断言即论文"故障注入实验"章节的证据链——功能存在性 → 功能有效性。真实模型实验建议跑 `--fault` 各场景 × repeat≥3，对比各模型扰动下的 pass^k 与过程指标。
+- **验证**：全量 133 项通过。
+- **commit**：`feat(R-05)`。
 
 ---
 

@@ -149,8 +149,16 @@ def run_experiment(
     sleep_s: float = 0.0,
     progress: Callable[[str], None] = print,
     allow_local_commands: bool = False,
+    fault: "str | Any | None" = None,  # R-05：故障注入 profile（名称或 FaultProfile）
 ) -> dict[str, Any]:
-    """顺序执行 models × tasks × repeat 次评测，落同一个实验库并产出对比报告。"""
+    """顺序执行 models × tasks × repeat 次评测，落同一个实验库并产出对比报告。
+
+    fault：R-05 扰动实验——传预置 profile 名（slow_tool / flaky_tool / prompt_injection）
+    或 FaultProfile 实例；每次尝试的 meta 记录 fault 配置，报告标注扰动模式。
+    """
+    from .faults import resolve_fault
+    profile = resolve_fault(fault) if isinstance(fault, str) else fault
+
     db_path = Path(db_path)
     if db_path.exists():
         raise FileExistsError(f"实验数据库已存在，拒绝覆盖（防污染）: {db_path}")
@@ -162,6 +170,8 @@ def run_experiment(
     tasks = [TaskPackage.load(d) for d in task_dirs]
     task_ids = [t.id for t in tasks]
     mode = "docker" if use_docker else "local"
+    if profile is not None:
+        mode += f"+fault:{profile.name}"
 
     rows: list[dict[str, Any]] = []
     total = len(models) * len(tasks) * repeat
@@ -176,9 +186,11 @@ def run_experiment(
                     res = TaskRunner(store).run(
                         task, llm, max_turns=max_turns, use_docker=use_docker,
                         allow_local_commands=allow_local_commands,
+                        faults=profile,  # R-05：扰动注入
                         meta_extra={
                             "run_id": run_id, "model": model,
                             "task": task.id, "repeat": rep,
+                            **({"fault": profile.to_meta()} if profile is not None else {}),
                         },
                     )
                     p, c = _tokens(store, res.attempt_id)

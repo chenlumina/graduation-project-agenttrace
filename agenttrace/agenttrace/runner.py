@@ -122,6 +122,7 @@ class TaskRunner:
         use_docker: bool = False,
         meta_extra: dict | None = None,
         allow_local_commands: bool = False,
+        faults=None,  # R-05：FaultProfile，扰动实验注入（仅本地通道生效）
     ) -> AttemptResult:
         if use_mcp and use_docker:
             raise ValueError("--mcp 与 --docker 暂不支持同时使用：MCP 工具服务器运行在宿主侧")
@@ -137,6 +138,8 @@ class TaskRunner:
         if use_docker:
             from .sandbox import DEFAULT_IMAGE
             env_meta["sandbox_image"] = DEFAULT_IMAGE
+        if faults is not None:  # R-05：扰动配置记入 meta（实验可归因）
+            env_meta["fault"] = faults.to_meta()
         meta = AttemptMeta(
             attempt_id=attempt_id,
             task_id=task.id,
@@ -209,7 +212,9 @@ class TaskRunner:
                 audited.record_declarations()
                 agent = agent or MiniAgent(llm, max_turns=max_turns, tool_client=audited)
             else:
-                agent = agent or MiniAgent(llm, max_turns=max_turns, policy=policy)
+                agent = agent or MiniAgent(
+                    llm, max_turns=max_turns, policy=policy, faults=faults
+                )
 
             try:
                 agent.run(task.instruction, test_cmd, workspace, collector, test_runner=test_runner)

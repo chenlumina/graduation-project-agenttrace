@@ -73,6 +73,10 @@ def main(argv: list[str] | None = None) -> int:
     p_x.add_argument("--db", default=None, help="实验库路径（默认按时间戳新建 experiments/exp-<ts>.db）")
     p_x.add_argument("--llm", default="openai", choices=["scripted", "openai"])
     p_x.add_argument("--repeat", type=int, default=1)
+    p_x.add_argument(
+        "--fault", default=None, choices=["slow_tool", "flaky_tool", "prompt_injection"],
+        help="R-05 故障注入：扰动实验（profile 记入每次尝试 meta，报告标注）",
+    )
     p_x.add_argument("--max-turns", type=int, default=10)
     p_x.add_argument("--docker", action="store_true")
     p_x.add_argument(
@@ -202,6 +206,7 @@ def main(argv: list[str] | None = None) -> int:
             max_turns=args.max_turns, use_docker=args.docker,
             repeat=args.repeat, sleep_s=args.sleep,
             allow_local_commands=args.allow_local_commands,
+            fault=args.fault,  # R-05：扰动实验
         )
         print(summary["summary_md"])
         print(f"\n实验库: {summary['db']}")
