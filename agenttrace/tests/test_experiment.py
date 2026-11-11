@@ -63,6 +63,49 @@ class TestExperiment(unittest.TestCase):
             summary["aggregates"]["modelA"]["total_tokens"],
         )
 
+    def test_stats_pass_at_k_and_std(self):
+        """R-04：pass@1 / pass^k / mean±std 统计口径。"""
+        from agenttrace.llm import LLMResponse
+
+        class HalfFailFactory:
+            """第奇数次尝试整体失败、偶数次通过：pass@1=0.5、pass^k=0。"""
+
+            def __init__(self):
+                self.calls = 0
+
+            def __call__(self, model, task):
+                self.calls += 1
+                scripted = ScriptedLLM(task.scripted_actions)
+                fail_this_attempt = self.calls % 2 == 1
+
+                class _LLM:
+                    model = "half-fail"
+
+                    def chat(self, messages):
+                        if fail_this_attempt:
+                            return LLMResponse("不是JSON，只是文字。", "half-fail", 5, 5)
+                        return scripted.chat(messages)
+
+                return _LLM()
+
+        db = Path(self.tmp.name) / "exp-stats.db"
+        summary = run_experiment(
+            ["half-fail"], self.task_roots[:2], db,
+            llm_factory=HalfFailFactory(), repeat=2, sleep_s=0,
+        )
+        a = summary["aggregates"]["half-fail"]
+        # 2 任务 × 2 次：奇数次失败 → pass@1 = 0.5
+        self.assertEqual(a["attempts"], 4)
+        self.assertAlmostEqual(a["pass_at_1"], 0.5)
+        # 每个任务都有一次失败 → pass^k = 0（稳定性与能力区分开）
+        self.assertEqual(a["task_pass_at_k"], 0.0)
+        # n=4 ≥ 2 → 标准差有值
+        self.assertIsNotNone(a["token_std"])
+        md = summary["summary_md"]
+        self.assertIn("pass@1", md)
+        self.assertIn("pass^k", md)
+        self.assertIn("mean±std", md)
+
     def test_refuses_existing_db(self):
         db = Path(self.tmp.name) / "existing.db"
         db.write_bytes(b"x")

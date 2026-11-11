@@ -6,12 +6,19 @@
 - 每次尝试的 meta 记录 run_id / model / task / repeat / sandbox，分析可精确分组；
 - 每次尝试使用全新临时工作区与全新对话历史（与单次运行同一保证）；
 - 实验入口由 CLI 强制显式 --db 或时间戳新建，绝不触碰 traces.db / demo-traces.db。
+
+统计口径（R-04 起，建议论文沿用）：
+- pass@1 ：单次尝试通过率 = 通过次数 / 尝试次数，刻画能力上限；
+- pass^k ：同一"模型×任务"组合 repeat 次全部通过的任务比例，刻画稳定性
+  （pass@1 相同的两个模型，pass^k 可以拉开差距）；
+- 均值与标准差：tokens / 耗时在 n≥2 时报告 mean±std（样本标准差），n=1 时仅报告均值。
 """
 from __future__ import annotations
 
 import time
 from datetime import datetime
 from pathlib import Path
+from statistics import stdev as _stdev
 from typing import Any, Callable
 
 from .llm import OpenAICompatLLM
@@ -28,6 +35,23 @@ def default_db_path(runs_dir: str | Path = "experiments") -> Path:
 def default_llm_factory(model: str, task: TaskPackage):
     """默认工厂：OpenAI 兼容接口，按实验维度覆盖模型名。"""
     return OpenAICompatLLM(model=model)
+
+
+def _mean(xs: list[float]) -> float:
+    return sum(xs) / len(xs) if xs else 0.0
+
+
+def _std(xs: list[float]) -> float | None:
+    """样本标准差；n<2 时无意义，返回 None（报告仅显示均值）。"""
+    return round(_stdev(xs), 2) if len(xs) >= 2 else None
+
+
+def _fmt_mean_std(xs: list[float], unit: str = "") -> str:
+    m = _mean(xs)
+    s = _std(xs)
+    if s is None:
+        return f"{m:.1f}{unit}"
+    return f"{m:.1f}±{s}{unit}"
 
 
 def _tokens(store: TraceStore, attempt_id: str) -> tuple[int, int]:
@@ -53,13 +77,16 @@ def _duration_s(store: TraceStore, attempt_id: str) -> float | None:
 
 
 def _cell(rows: list[dict[str, Any]], model: str, task_id: str) -> str:
+    """任务×模型单元格：通过次数（pass@1）+ 稳定性标记（pass^k）+ token 均值±std。"""
     rs = [r for r in rows if r["model"] == model and r["task"] == task_id]
     if not rs:
         return "—"
     ok = sum(1 for r in rs if r["passed"])
-    tok = sum(r["total_tokens"] for r in rs)
-    mark = "✅" if ok == len(rs) else "❌"
-    return f"{mark} {ok}/{len(rs)} · {tok}tok"
+    n = len(rs)
+    toks = [float(r["total_tokens"]) for r in rs]
+    # pass^k 视角：n 次全部通过（稳定）/ 部分通过（不稳定）/ 全失败
+    mark = "✅" if ok == n else ("◐" if ok > 0 else "❌")
+    return f"{mark} {ok}/{n} p@1={ok / n:.2f} · {_fmt_mean_std(toks)}tok"
 
 
 def build_summary_md(
@@ -79,19 +106,28 @@ def build_summary_md(
         f"- 任务数：{len(task_ids)}",
         f"- 执行模式：{mode}",
         f"- 成本口径：tokens（单价按各平台价目折算）",
+        f"- 统计口径（R-04）：pass@1 = 通过次数/尝试次数（能力上限）；"
+        f"pass^k = 同组合多次全部通过的任务比例（稳定性）；"
+        f"tokens/耗时为 mean±std（n≥2 时样本标准差）",
         "",
         "## 模型汇总",
         "",
-        "| 模型 | 尝试数 | 通过 | 通过率 | 总 tokens | 平均 tokens | 平均耗时(s) |",
-        "|---|---|---|---|---|---|---|",
+        "| 模型 | 尝试数 | 通过 | pass@1 | 任务 pass^k | 总 tokens | 平均 tokens | token std | 平均耗时(s) | 耗时 std |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for m in models:
         a = aggregates[m]
-        rate = f"{a['pass_rate'] * 100:.1f}%" if a["attempts"] else "-"
+        rate = f"{a['pass_at_1'] * 100:.1f}%" if a["attempts"] else "-"
+        passk = (
+            f"{a['task_pass_at_k'] * 100:.1f}%"
+            if a.get("task_total") else "-"
+        )
+        tok_std = a["token_std"] if a["token_std"] is not None else "-"
+        dur_std = a["duration_std"] if a["duration_std"] is not None else "-"
         avg_dur = a["avg_duration_s"] if a["avg_duration_s"] is not None else "-"
         lines.append(
-            f"| {m} | {a['attempts']} | {a['passed']} | {rate} | {a['total_tokens']} "
-            f"| {a['avg_tokens']} | {avg_dur} |"
+            f"| {m} | {a['attempts']} | {a['passed']} | {rate} | {passk} | {a['total_tokens']} "
+            f"| {a['avg_tokens']} | {tok_std} | {avg_dur} | {dur_std} |"
         )
     lines += ["", "## 任务 × 模型", "", "| 任务 | " + " | ".join(models) + " |",
               "|---|" * 1 + "---|" * len(models)]
@@ -167,15 +203,27 @@ def run_experiment(
     for model in models:
         rs = [r for r in rows if r["model"] == model]
         passed = sum(1 for r in rs if r["passed"])
-        toks = [r["total_tokens"] for r in rs]
+        toks = [float(r["total_tokens"]) for r in rs]
         durs = [r["duration_s"] for r in rs if r["duration_s"] is not None]
+        # R-04：pass^k = 同"模型×任务"组合 repeat 次全部通过的任务比例（稳定性）
+        task_ids_of_model = sorted({r["task"] for r in rs})
+        stable_tasks = [
+            t for t in task_ids_of_model
+            if all(r["passed"] for r in rs if r["task"] == t)
+        ]
         aggregates[model] = {
             "attempts": len(rs),
             "passed": passed,
-            "pass_rate": (passed / len(rs)) if rs else 0.0,
+            "pass_at_1": (passed / len(rs)) if rs else 0.0,
+            "pass_rate": (passed / len(rs)) if rs else 0.0,  # 兼容字段
+            "task_total": len(task_ids_of_model),
+            "task_pass_at_k": (len(stable_tasks) / len(task_ids_of_model))
+            if task_ids_of_model else 0.0,
             "total_tokens": sum(toks),
-            "avg_tokens": round(sum(toks) / len(toks), 1) if toks else 0,
-            "avg_duration_s": round(sum(durs) / len(durs), 2) if durs else None,
+            "avg_tokens": round(_mean(toks), 1) if toks else 0,
+            "token_std": _std(toks),
+            "avg_duration_s": round(_mean(durs), 2) if durs else None,
+            "duration_std": _std([float(d) for d in durs]) if durs else None,
         }
 
     summary_md_path = db_path.with_name(db_path.stem + ".summary.md")
