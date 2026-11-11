@@ -75,6 +75,56 @@ class TestMetrics(unittest.TestCase):
         self.assertNotIn("api_key", e.data["params"])
         self.assertEqual(e.data["finish_reason"], "stop")
 
+    def test_classify_structured_codes(self):
+        """R-14：结构化 error_code 归因——终止性错误优先于过程性异常，取最早出现者。"""
+        def script(c):
+            e1 = c.llm_call(model="m", messages=[], response="r",
+                            usage={"prompt_tokens": 1, "completion_tokens": 1})
+            # 先发生过程性异常（越界被拒，不终止）
+            c.tool_call("read_file", {"path": "../x"}, "路径越界", "error",
+                        parent_id=e1.id, extra={"error_code": "workspace_escape"})
+            # 后发生终止性错误
+            c.error("达到最大轮数仍未完成", code="max_turns")
+        evs = self.store.events(self.collect(script))
+        cl = classify(evs)
+        self.assertEqual(cl["primary"], "max_turns")  # 终止性优先
+        self.assertIn("workspace_escape", cl["labels"])  # 过程标签保留
+        self.assertFalse(cl["passed"])
+
+    def test_classify_verdict_failed(self):
+        """R-14：无终止性错误、判定未通过 → tests_failed。"""
+        def script(c):
+            e1 = c.llm_call(model="m", messages=[], response="r",
+                            usage={"prompt_tokens": 1, "completion_tokens": 1})
+            c.tool_call("finish", {}, "done", "ok", parent_id=e1.id)
+            c.error("最终判定未通过: 断言失败", code="verdict_failed")
+            c.run_result(False, "FAIL")
+        evs = self.store.events(self.collect(script))
+        cl = classify(evs)
+        self.assertEqual(cl["primary"], "tests_failed")
+
+    def test_classify_legacy_text_fallback(self):
+        """R-14：旧轨迹（无 error_code）回退文本匹配，口径与 v1 兼容。"""
+        def script(c):
+            c.error("无法解析 Agent 动作: bad output")
+        evs = self.store.events(self.collect(script))
+        cl = classify(evs)
+        self.assertEqual(cl["primary"], "parse_error")
+        self.assertEqual(cl["labels"], ["parse_error"])
+
+    def test_classify_pass_keeps_process_labels(self):
+        """R-14：通过但带过程异常 → primary=passed，标签保留。"""
+        def script(c):
+            e1 = c.llm_call(model="m", messages=[], response="r",
+                            usage={"prompt_tokens": 1, "completion_tokens": 1})
+            c.tool_call("read_file", {"path": "../x"}, "路径越界", "error",
+                        parent_id=e1.id, extra={"error_code": "workspace_escape"})
+            c.run_result(True, "OK")
+        evs = self.store.events(self.collect(script))
+        cl = classify(evs)
+        self.assertEqual(cl["primary"], "passed")
+        self.assertIn("workspace_escape", cl["labels"])
+
     def test_clean_pass(self):
         def script(c):
             e1 = c.llm_call(model="m", messages=[], response="r",

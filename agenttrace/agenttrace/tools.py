@@ -11,6 +11,12 @@ from typing import Union
 from .envutil import sanitized_env
 
 
+class WorkspaceEscapeError(ValueError):
+    """路径越界（R-14：结构化错误码 workspace_escape 的载体，兼容 ValueError 捕获）。"""
+
+    error_code = "workspace_escape"
+
+
 class Workspace:
     """以任务工作区为根的文件/命令访问层。Agent 只能通过它触碰文件系统。"""
 
@@ -21,7 +27,7 @@ class Workspace:
         """解析相对路径并确保不越出工作区根目录。"""
         p = (self.root / rel).resolve()
         if not p.is_relative_to(self.root):
-            raise ValueError(f"路径越界: {rel!r}")
+            raise WorkspaceEscapeError(f"路径越界: {rel!r}")
         return p
 
     def read(self, rel: str) -> str:

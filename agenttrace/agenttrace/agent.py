@@ -29,6 +29,11 @@ from .collector import TraceCollector
 from .policy import Policy
 from .tools import Workspace
 
+
+def _tool_error_code(e: BaseException) -> str:
+    """R-14：从异常提取结构化错误码；异常自带 error_code 属性（如路径越界）则透传。"""
+    return getattr(e, "error_code", None) or "tool_error"
+
 SYSTEM_PROMPT = (
     "你是运行在受限工作区中的编程 Agent。每一轮只输出一个 JSON 对象（纯文本；"
     "禁止使用 <tool_call>、<function> 等任何工具调用标记，禁止输出解释文字），格式："
@@ -264,6 +269,7 @@ class MiniAgent:
                         result = f"未知工具: {tool}"
                         payload = result
                         status = "error"
+                        extra = {"error_code": "unknown_tool"}  # R-14：结构化错误码
                     else:
                         # 授权环节：本地通道同样必须过策略（C-2）
                         decision = self.policy.evaluate(tool, args)
@@ -341,6 +347,9 @@ class MiniAgent:
                     result = f"工具执行失败: {type(e).__name__}: {e}"
                     payload = result
                     status = "error"
+                    if extra is None:
+                        extra = {}
+                    extra = {**extra, "error_code": _tool_error_code(e)}  # R-14
                 tool_ev = collector.tool_call(
                     tool, args, result, status, parent_id=ev.id, extra=extra,
                     duration_ms=int((time.monotonic() - tool_t0) * 1000),  # R-09
@@ -352,5 +361,7 @@ class MiniAgent:
             messages.append({"role": "user", "content": f"TOOL_RESULT[{tool}/{status}]: {payload}"})
 
         if not finished:
-            collector.error("达到最大轮数仍未完成（max_turns_exceeded）")
+            collector.error(
+                "达到最大轮数仍未完成（max_turns_exceeded）", code="max_turns"
+            )
             raise RuntimeError("max_turns_exceeded")

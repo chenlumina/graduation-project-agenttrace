@@ -9,6 +9,11 @@
 - 重复调用率   duplicate_tool_rate ：(tool, args) 完全相同的调用占比；
 - 循环检测     loop_detected       ：同一 (tool, args) 连续出现 ≥3 次判定为循环；
 - 连续错误重试 max_consecutive_errors：连续 status=error 的工具调用最大长度。
+
+失败归因（R-14 v2）：事件携带结构化 error_code（枚举、机器可读、与展示文案分离），
+classify 优先读 error_code；旧轨迹（无 error_code）回退文本匹配，仅作过渡兼容。
+主因判定规则见 classify 文档字符串——终止性错误码中最早出现者为主因，
+不再依赖错误文案或代码语句顺序。
 """
 from __future__ import annotations
 
@@ -130,43 +135,88 @@ PRIMARY_LABELS = {
     "incomplete": "未完成即终止",
     "workspace_escape": "工作区越界尝试",
     "unknown_tool": "调用未知工具",
+    "tool_error": "工具执行失败",
+    "agent_exception": "Agent 执行异常",
+    "runner_exception": "执行器异常",
+    "verdict_failed": "最终判定未通过",
     "unknown": "未知原因",
 }
 
+#: 会终止本次尝试的错误码（R-14 主因判定：终止性错误优先于过程性异常）
+_TERMINAL_CODES = {
+    "max_turns", "parse_error", "empty_response", "agent_exception", "runner_exception",
+}
+
+
+def _extract_codes(events: list[TraceEvent]) -> list[tuple[int, str]]:
+    """按事件顺序收集 (seq, error_code)：error 事件与 error 状态的 tool_call。"""
+    out: list[tuple[int, str]] = []
+    for e in sorted(events, key=lambda x: x.seq):
+        if e.type == "error" and e.data.get("error_code"):
+            out.append((e.seq, str(e.data["error_code"])))
+        elif e.type == "tool_call" and e.data.get("status") == "error" and e.data.get("error_code"):
+            out.append((e.seq, str(e.data["error_code"])))
+    return out
+
+
+#: 旧轨迹（无 error_code 字段）的文本匹配回退表：v1 口径，仅作过渡期兼容
+_LEGACY_TEXT_RULES = (
+    ("workspace_escape", ("路径越界",)),
+    ("unknown_tool", ("未知工具",)),
+    ("empty_response", ("空回复",)),
+    ("parse_error", ("无法解析",)),
+    ("max_turns", ("达到最大轮数", "max_turns_exceeded")),
+)
+
 
 def classify(events: list[TraceEvent]) -> dict[str, Any]:
-    """规则版失败归因：按优先级从轨迹证据中提取失败原因标签。
+    """失败归因（R-14 v2）：优先读结构化 error_code，旧轨迹回退文本匹配。
 
-    通过的任务也可能带过程异常标签（如越界尝试被拒后完成任务），
-    此时 primary=passed，标签保留在 labels 中供过程分析使用。
+    主因判定规则（明确、可写进论文）：
+    1. 通过 → passed；
+    2. 存在终止性错误码（max_turns / parse_error / empty_response / agent_exception /
+       runner_exception）→ 取其中**最早出现**的一个；
+    3. 无终止性错误但判定未通过（verdict_failed）或已 finish → tests_failed；
+    4. 仅有过程性异常（如越界被拒）但未完成 → 取最早的过程性错误码；
+    5. 无任何证据 → incomplete。
+    通过的任务也可能带过程异常标签，primary=passed，标签保留供过程分析。
     """
     metrics = compute_metrics(events)
-    error_msgs = [str(e.data.get("message", "")) for e in events if e.type == "error"]
-    err_tool_results = [
-        str(e.data.get("result", ""))
-        for e in events
-        if e.type == "tool_call" and e.data.get("status") == "error"
-    ]
-    joined = "\n".join(error_msgs + err_tool_results)
+    seq_codes = _extract_codes(events)
 
-    labels: list[str] = []
-    if "路径越界" in joined:
-        labels.append("workspace_escape")
-    if "未知工具" in joined:
-        labels.append("unknown_tool")
-    if "空回复" in joined:
-        labels.append("empty_response")
-    if "无法解析" in joined:
-        labels.append("parse_error")
-    if "达到最大轮数" in joined or "max_turns_exceeded" in joined:
-        labels.append("max_turns")
+    if seq_codes:
+        labels = list(dict.fromkeys(c for _, c in seq_codes))
+    else:
+        # 旧轨迹回退：文本匹配（文案改动会导致归因失效，v2 起不再依赖）
+        error_msgs = [str(e.data.get("message", "")) for e in events if e.type == "error"]
+        err_tool_results = [
+            str(e.data.get("result", ""))
+            for e in events
+            if e.type == "tool_call" and e.data.get("status") == "error"
+        ]
+        joined = "\n".join(error_msgs + err_tool_results)
+        labels = [
+            code for code, needles in _LEGACY_TEXT_RULES
+            if any(n in joined for n in needles)
+        ]
+        if "空回复" in joined and "empty_response" in joined:
+            labels.append("empty_response")
 
+    codes = [c for _, c in seq_codes]
     if metrics["passed"]:
         primary = "passed"
-    elif labels:
-        primary = labels[0]
-    elif metrics["finish_reached"]:
-        primary = "tests_failed"
     else:
-        primary = "incomplete"
+        terminal = [c for c in codes if c in _TERMINAL_CODES]
+        if terminal:
+            primary = terminal[0]  # 最早的终止性错误
+        elif "verdict_failed" in codes:
+            primary = "tests_failed"
+        elif metrics["finish_reached"]:
+            primary = "tests_failed"
+        elif codes:
+            primary = codes[0]  # 最早的过程性异常
+        elif labels:
+            primary = labels[0]
+        else:
+            primary = "incomplete"
     return {"passed": metrics["passed"], "primary": primary, "labels": labels}

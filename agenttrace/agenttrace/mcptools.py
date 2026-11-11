@@ -204,6 +204,7 @@ class AuditedMCPClient:
             self.collector.tool_call(
                 tool, args, f"MCP 调用异常: {e}", "error", parent_id,
                 duration_ms=int((time.monotonic() - call_t0) * 1000),  # R-09
+                extra={"error_code": "tool_error"},  # R-14：结构化错误码
             )
             return "error", f"MCP 调用异常: {e}", "error"
 

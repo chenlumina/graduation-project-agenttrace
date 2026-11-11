@@ -212,7 +212,9 @@ class TaskRunner:
             try:
                 agent.run(task.instruction, test_cmd, workspace, collector, test_runner=test_runner)
             except Exception as e:  # Agent 异常也进入轨迹，判定仍以测试为准
-                collector.error(f"Agent 执行异常: {type(e).__name__}: {e}")
+                collector.error(
+                    f"Agent 执行异常: {type(e).__name__}: {e}", code="agent_exception"
+                )
                 agent_error = True
 
             # 最终判定：隔离副本 + 原始隐藏测试（Agent 的篡改无效），fail-closed 判定
@@ -225,11 +227,14 @@ class TaskRunner:
             verdict_output = test_res["stdout_tail"] + "\n" + test_res["stderr_tail"]
             passed = bool(test_res.get("verdict_ok")) and not agent_error
             if not test_res.get("verdict_ok"):
-                collector.error(f"最终判定未通过: {test_res.get('verdict_reason', '未知原因')}")
+                collector.error(
+                    f"最终判定未通过: {test_res.get('verdict_reason', '未知原因')}",
+                    code="verdict_failed",
+                )
             collector.run_result(passed, verdict_output[-2000:])
             status = "passed" if passed else ("error" if agent_error else "failed")
         except Exception as e:  # 装配等执行器自身异常
-            collector.error(f"任务执行异常: {type(e).__name__}: {e}")
+            collector.error(f"任务执行异常: {type(e).__name__}: {e}", code="runner_exception")
             passed = False
             status = "error"
         finally:
