@@ -359,6 +359,8 @@ function renderDetail(ev) {
     body += `<div class="kv"><span class="k">Model</span><span class="v">${esc(ev.data.model)}</span></div>`;
     body += `<div class="kv"><span class="k">Tokens</span><span class="v">${u.prompt_tokens ?? "?"} + ${u.completion_tokens ?? "?"}</span></div>`;
     if (dur) body += `<div class="kv"><span class="k">耗时</span><span class="v">${esc(fmtDur(ev.data.duration_ms))}</span></div>`;
+    const modeLabel = ev.data.messages_mode === "incremental" ? "本轮新增（完整对话可重放重建）" : "完整快照";
+    body += `<div class="kv" style="margin-top:10px"><span class="k">上下文 · ${esc(modeLabel)}</span></div>`;
     body += (ev.data.messages || [])
       .map((msg) => `<div class="msg ${esc(msg.role)}"><div class="role">${esc(msg.role)}</div>${pre(msg.content)}</div>`)
       .join("");

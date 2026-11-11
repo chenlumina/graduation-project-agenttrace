@@ -3,6 +3,9 @@
 轨迹 = 一次评测尝试（Attempt）内的有序事件流。事件类型与必需字段：
 
 - llm_call     : model, messages, response, usage          —— 一次模型调用
+  （R-08 起 messages 为**增量记录**：首轮为完整对话快照 messages_mode="full"，
+  其后各轮只记录自上轮之后新增的消息 messages_mode="incremental"，
+  完整对话用 rebuild_messages(events) 重放重建，消除平方级存储放大）
 - tool_call    : tool, args, result, status                —— Agent 的一个动作
 - file_diff    : path, diff                                —— 工作区文件改动（unified diff）
 - command_exec : cmd, exit_code, stdout_tail, stderr_tail  —— 一条命令的执行
@@ -15,8 +18,9 @@
 file_diff（及写文件衍生的代码审计）挂在产生它的 tool_call 之下（R-10 起），
 形成 llm_call → tool_call → file_diff 三层因果链，改动可归属到具体工具调用。
 
-schema 版本：v3 起（v3 新增 policy_audit 事件：把授权决策与 MCP 传输解耦，
-本地通道与 MCP 通道共用同一套策略评估与留痕口径）。
+schema 版本：v4 起（v3 新增 policy_audit 事件：把授权决策与 MCP 传输解耦，
+本地通道与 MCP 通道共用同一套策略评估与留痕口径；v4 起 llm_call.messages
+改为增量记录并携带 messages_mode 标记，旧库无该字段的 llm_call 视为 full 快照）。
 """
 from __future__ import annotations
 
@@ -25,7 +29,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 AGENT_STATUSES = ("running", "passed", "failed", "error")
 
@@ -119,3 +123,23 @@ class AttemptMeta:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def rebuild_messages(events: list["TraceEvent"]) -> list[dict[str, str]]:
+    """从轨迹事件序列重建完整对话（R-08）。
+
+    规则：messages_mode="incremental" 的 llm_call 逐段追加；
+    "full"（或旧轨迹无标记）为当轮完整快照，整段重置。
+    新轨迹（v4）：首轮 full + 后续增量 → 精确重建；
+    旧轨迹（≤v3）：每个 llm_call 均为 full → 结果为最后一个 full 快照。
+    """
+    full: list[dict[str, str]] = []
+    for e in events:
+        if e.type != "llm_call":
+            continue
+        msgs = e.data.get("messages") or []
+        if e.data.get("messages_mode") == "incremental":
+            full.extend(msgs)
+        else:
+            full = list(msgs)
+    return full

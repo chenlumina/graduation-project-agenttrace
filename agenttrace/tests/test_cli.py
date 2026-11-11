@@ -46,7 +46,7 @@ class TestCLI(unittest.TestCase):
             )
             self.assertEqual(proc2.returncode, 0, msg=proc2.stdout + proc2.stderr)
             doc = json.loads(exp_path.read_text(encoding="utf-8"))
-            self.assertEqual(doc["schema_version"], 3)
+            self.assertEqual(doc["schema_version"], 4)
             self.assertGreaterEqual(len(doc["events"]), 10)
 
     def test_metrics_command(self):

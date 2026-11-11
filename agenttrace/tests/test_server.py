@@ -79,7 +79,7 @@ class TestServerAPI(unittest.TestCase):
     def test_attempt_detail(self):
         status, body = self._get_json(f"/api/attempts/{self.attempt_id}")
         self.assertEqual(status, 200)
-        self.assertEqual(body["schema_version"], 3)
+        self.assertEqual(body["schema_version"], 4)
         self.assertEqual(body["attempt"]["task_id"], "fix_leap_year")
         self.assertGreaterEqual(len(body["events"]), 10)
         types = {e["type"] for e in body["events"]}

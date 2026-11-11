@@ -42,7 +42,7 @@ class TestTraceStore(unittest.TestCase):
         c.llm_call(model="m", messages=[], response="r", usage={"prompt_tokens": 1, "completion_tokens": 2})
         self.store.finish_attempt("a1", "passed")
         doc = self.store.export("a1")
-        self.assertEqual(doc["schema_version"], 3)
+        self.assertEqual(doc["schema_version"], 4)
         self.assertEqual(doc["attempt"]["status"], "passed")
         self.assertEqual(len(doc["events"]), 1)
 

@@ -190,6 +190,8 @@ class MiniAgent:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": instruction},
         ]
+        # R-08：增量记录基准——已完整落库的消息数；首轮落完整快照，其后各轮只落新增
+        recorded = 0
         finished = False
         empty_retries = 0
         parse_retries = 0
@@ -200,7 +202,7 @@ class MiniAgent:
             duration_ms = int((time.monotonic() - t0) * 1000)
             ev = collector.llm_call(
                 model=resp.model,
-                messages=messages,
+                messages=messages if recorded == 0 else messages[recorded:],
                 response=resp.content,
                 usage={
                     "prompt_tokens": resp.prompt_tokens,
@@ -209,7 +211,9 @@ class MiniAgent:
                 duration_ms=duration_ms,
                 params=getattr(resp, "params", None),  # R-11：采样参数快照
                 finish_reason=getattr(resp, "finish_reason", "") or "",
+                incremental=recorded != 0,  # R-08
             )
+            recorded = len(messages)
 
             # 模型空回复：记 error 并重试本轮（不污染对话历史）
             if not (resp.content or "").strip():

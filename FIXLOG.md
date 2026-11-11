@@ -15,7 +15,7 @@
 | R-11 | 缺少采样参数与版本记录 | 严重 | ✅ 已完成 | 2026-11-11 | 全量 120 项通过 |
 | R-15 | 解析失败直接终止，策略不一致 | 严重 | ✅ 已完成 | 2026-11-11 | 全量 122 项通过 |
 | R-14 | 失败归因依赖中文文本匹配 | 严重 | ✅ 已完成 | 2026-11-11 | 全量 126 项通过 |
-| R-08 | llm_call 全量落库，存储平方级膨胀 | 严重 | 待修复 | — | — |
+| R-08 | llm_call 全量落库，存储平方级膨胀 | 严重 | ✅ 已完成 | 2026-11-11 | 全量 126 项通过 |
 | R-03 | 任务集天花板效应 | 阻断 | 待修复 | — | — |
 | R-04 | 实验统计口径不足 | 严重 | 待修复 | — | — |
 | R-05 | 缺少故障注入实验 | 严重 | 待修复 | — | — |
@@ -42,6 +42,20 @@
 - **验证**：`test_store` 9 项全过；全量 118 项通过。
 - **遗留说明**：报告附加建议的 `events.attempt_id` 外键约束需重建表（SQLite 不支持 ALTER 加外键），列入后续存储迁移项，本次未做。
 - **commit**：`fix(R-07)`。
+
+---
+
+## R-08　llm_call 增量式对话存储（严重，P1）
+
+- **改动**：
+  - `model.py`：schema_version 3 → 4；新增 `rebuild_messages(events)` 重放重建函数（规则：incremental 追加、full 重置；旧轨迹无标记视为 full，结果为最后快照，兼容 v3）。
+  - `collector.llm_call`：新增 `incremental` 参数，事件 data 写入 `messages_mode`（full / incremental）。
+  - `agent.py`：维护 `recorded` 基准——首轮落完整对话快照（system + instruction），其后各轮只落自上轮后新增的消息（assistant 回复 + TOOL_RESULT 回灌），第 n 轮事件体积从"约等于前 n 轮内容之和"降为 O(本轮)；空回复重试轮记录空增量，语义精确。
+  - 前端 `app.js`：llm_call 详情标注上下文模式（完整快照 / 本轮新增），气泡按增量渲染更贴合逐步回放。
+  - 测试：`test_agent_e2e` 断言首轮 full（2 条）+ 后续 incremental（各 2 条）+ rebuild_messages 精确重建（2 + 2×(轮数-1)）；schema 断言更新为 4（test_store / test_server / test_cli）。
+- **效果**：长任务下轨迹存储从平方级增长降为线性，SQLite 文件膨胀与导出/接口传输变慢问题解除。
+- **验证**：全量 126 项通过。
+- **commit**：`fix(R-08)`。
 
 ---
 

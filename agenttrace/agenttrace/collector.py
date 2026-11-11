@@ -41,10 +41,14 @@ class TraceCollector:
         parent_id: Optional[str] = None,
         params: Optional[dict[str, Any]] = None,
         finish_reason: str = "",
+        incremental: bool = False,
     ) -> TraceEvent:
         data: dict[str, Any] = {
             "model": model,
+            # R-08：增量式记录——incremental=True 时 messages 仅为自上轮后新增的消息，
+            # 完整对话用 rebuild_messages(events) 重建（消除平方级存储放大）
             "messages": messages,
+            "messages_mode": "incremental" if incremental else "full",
             "response": response,
             "usage": usage,
         }

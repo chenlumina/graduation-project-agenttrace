@@ -87,6 +87,20 @@ class TestEndToEnd(unittest.TestCase):
         self.assertTrue(m.meta["code_version"])  # git 短 hash 或 "unknown"，不为空
         self.assertIn("python", m.meta)
 
+        # R-08：llm_call 增量记录——首轮 full 快照，其后 incremental；重放可精确重建
+        from agenttrace.model import rebuild_messages
+        llm_events = [e for e in events if e.type == "llm_call"]
+        self.assertEqual(llm_events[0].data["messages_mode"], "full")
+        self.assertEqual(len(llm_events[0].data["messages"]), 2)  # system + instruction
+        for e in llm_events[1:]:
+            self.assertEqual(e.data["messages_mode"], "incremental")
+            self.assertEqual(len(e.data["messages"]), 2)  # 上轮 assistant + tool 结果
+        rebuilt = rebuild_messages(events)
+        self.assertEqual(
+            len(rebuilt), 2 + 2 * (len(llm_events) - 1)
+        )  # 首轮 2 条 + 每轮新增 2 条
+        self.assertEqual(rebuilt[0]["role"], "system")
+
     def test_file_diff_nested_under_tool_call(self):
         """R-10：file_diff 必须挂在产生它的 write_file tool_call 之下（三层结构）。"""
         res = TaskRunner(self.store).run(self.task, ScriptedLLM(GOOD_ACTIONS))
