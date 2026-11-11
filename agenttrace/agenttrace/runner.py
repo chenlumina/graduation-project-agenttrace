@@ -17,6 +17,7 @@ import shutil
 import sys
 import tempfile
 import time
+from typing import Any
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -71,6 +72,19 @@ class AttemptResult:
     passed: bool
 
 
+def _git_commit() -> str:
+    """R-11：记录当前代码版本（短 commit hash），保证实验可归因到具体代码状态。"""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return out.stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
 def build_effective_policy(
     task_policy: Policy | None,
     *,
@@ -113,6 +127,14 @@ class TaskRunner:
         policy = build_effective_policy(
             task.policy, allow_local_commands=allow_local_commands, use_docker=use_docker
         )
+        # R-11：运行环境记录（复现实验所需）；docker 相关延迟导入，避免本地模式背上容器依赖
+        env_meta: dict[str, Any] = {
+            "code_version": _git_commit(),
+            "python": sys.version.split()[0],
+        }
+        if use_docker:
+            from .sandbox import DEFAULT_IMAGE
+            env_meta["sandbox_image"] = DEFAULT_IMAGE
         meta = AttemptMeta(
             attempt_id=attempt_id,
             task_id=task.id,
@@ -122,6 +144,7 @@ class TaskRunner:
                 "sandbox": "docker" if use_docker else "local",
                 "policy": policy.name,
                 "hidden_tests_isolated": True,
+                **env_meta,
             },
         )
         if meta_extra:

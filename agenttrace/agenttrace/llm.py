@@ -18,6 +18,10 @@ class LLMResponse:
     model: str
     prompt_tokens: int
     completion_tokens: int
+    # R-11：采样参数快照（temperature/top_p/seed/provider 等，不含密钥）与结束原因，
+    # 由采集层随 llm_call 事件落库，保证实验可复现
+    params: dict | None = None
+    finish_reason: str = ""
 
 
 class ScriptedLLM:
@@ -55,10 +59,21 @@ class OpenAICompatLLM:
         base_url: str | None = None,
         model: str | None = None,
         api_key: str | None = None,
+        temperature: float = 0.0,
+        top_p: float | None = None,
+        seed: int | None = None,
     ):
         self.base_url = base_url or os.environ.get("AGENTTRACE_LLM_BASE_URL")
         self.model = model or os.environ.get("AGENTTRACE_LLM_MODEL")
         self.api_key = api_key or os.environ.get("AGENTTRACE_LLM_API_KEY")
+        # R-11：采样参数快照——落轨迹用于复现，绝不含密钥
+        self.params: dict[str, Any] = {
+            "temperature": temperature,
+            "top_p": top_p,
+            "seed": seed,
+            "base_url": self.base_url,
+            "interface": "openai-compat",
+        }
         missing = [
             name
             for name, val in (
@@ -74,7 +89,14 @@ class OpenAICompatLLM:
             )
 
     def chat(self, messages: list[dict[str, str]]) -> LLMResponse:
-        payload = {"model": self.model, "messages": messages, "temperature": 0}
+        payload: dict[str, Any] = {
+            "model": self.model, "messages": messages,
+            "temperature": self.params["temperature"],
+        }
+        if self.params.get("top_p") is not None:
+            payload["top_p"] = self.params["top_p"]
+        if self.params.get("seed") is not None:
+            payload["seed"] = self.params["seed"]
         req = urllib.request.Request(
             self.base_url.rstrip("/") + "/chat/completions",
             data=json.dumps(payload).encode("utf-8"),
@@ -83,9 +105,12 @@ class OpenAICompatLLM:
         with urllib.request.urlopen(req, timeout=120) as r:
             body = json.loads(r.read().decode("utf-8"))
         usage = body.get("usage", {})
+        choices = body.get("choices") or [{}]
         return LLMResponse(
-            content=body["choices"][0]["message"]["content"],
+            content=choices[0].get("message", {}).get("content", ""),
             model=self.model,
             prompt_tokens=int(usage.get("prompt_tokens", 0)),
             completion_tokens=int(usage.get("completion_tokens", 0)),
+            params=dict(self.params),
+            finish_reason=str(choices[0].get("finish_reason") or ""),
         )

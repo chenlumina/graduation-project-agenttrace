@@ -58,6 +58,23 @@ class TestMetrics(unittest.TestCase):
         self.assertEqual(m["slowest_steps"][0]["name"], "run_tests")
         self.assertEqual(len(m["slowest_steps"]), 3)
 
+    def test_llm_params_recorded(self):
+        """R-11：llm_call 事件必须携带采样参数快照（不含密钥）。"""
+        def script(c):
+            c.llm_call(
+                model="m", messages=[], response="r",
+                usage={"prompt_tokens": 1, "completion_tokens": 1},
+                params={"temperature": 0, "top_p": None, "seed": 42, "interface": "openai-compat"},
+                finish_reason="stop",
+            )
+            c.run_result(True, "OK")
+        evs = self.store.events(self.collect(script))
+        e = evs[0]
+        self.assertEqual(e.data["params"]["seed"], 42)
+        self.assertEqual(e.data["params"]["temperature"], 0)
+        self.assertNotIn("api_key", e.data["params"])
+        self.assertEqual(e.data["finish_reason"], "stop")
+
     def test_clean_pass(self):
         def script(c):
             e1 = c.llm_call(model="m", messages=[], response="r",

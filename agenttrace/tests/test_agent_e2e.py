@@ -81,6 +81,12 @@ class TestEndToEnd(unittest.TestCase):
         doc = self.store.export(res.attempt_id)
         self.assertEqual(len(doc["events"]), len(events))
 
+        # R-11：attempt.meta 必须记录运行环境版本，保证实验可归因
+        m = self.store.get_attempt(res.attempt_id)
+        self.assertIn("code_version", m.meta)
+        self.assertTrue(m.meta["code_version"])  # git 短 hash 或 "unknown"，不为空
+        self.assertIn("python", m.meta)
+
     def test_file_diff_nested_under_tool_call(self):
         """R-10：file_diff 必须挂在产生它的 write_file tool_call 之下（三层结构）。"""
         res = TaskRunner(self.store).run(self.task, ScriptedLLM(GOOD_ACTIONS))

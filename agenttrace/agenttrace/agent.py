@@ -191,6 +191,8 @@ class MiniAgent:
                     "completion_tokens": resp.completion_tokens,
                 },
                 duration_ms=duration_ms,
+                params=getattr(resp, "params", None),  # R-11：采样参数快照
+                finish_reason=getattr(resp, "finish_reason", "") or "",
             )
 
             # 模型空回复：记 error 并重试本轮（不污染对话历史）

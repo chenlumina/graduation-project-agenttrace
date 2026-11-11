@@ -39,6 +39,8 @@ class TraceCollector:
         usage: dict[str, int],
         duration_ms: Optional[int] = None,
         parent_id: Optional[str] = None,
+        params: Optional[dict[str, Any]] = None,
+        finish_reason: str = "",
     ) -> TraceEvent:
         data: dict[str, Any] = {
             "model": model,
@@ -48,6 +50,10 @@ class TraceCollector:
         }
         if duration_ms is not None:
             data["duration_ms"] = duration_ms
+        if params:  # R-11：采样参数快照（不含密钥），保证实验可复现
+            data["params"] = params
+        if finish_reason:
+            data["finish_reason"] = finish_reason
         return self.emit("llm_call", data, parent_id)
 
     def tool_call(
