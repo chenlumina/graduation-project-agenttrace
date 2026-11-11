@@ -1,0 +1,69 @@
+{
+  "id": "fix_cart_total",
+  "level": "L2",
+  "instruction": "订单模块的含税总价与预期不符：财务口径以 src/config.py 中的配置为准，但当前订单计价行为和配置对不上。请定位并修复，使隐藏测试全部通过。",
+  "test_cmd": [
+    "{python}",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "hidden_tests",
+    "-p",
+    "test_*.py",
+    "-t",
+    "."
+  ],
+  "policy": {
+    "name": "demo-policy",
+    "default": "allow",
+    "deny_tools": [
+      "run_command"
+    ],
+    "read_deny_globs": [
+      "hidden_tests/*"
+    ],
+    "write_allow_globs": [
+      "src/*",
+      "src/**"
+    ],
+    "arg_deny_patterns": {}
+  },
+  "scripted_actions": [
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/cart.py"
+      }
+    },
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/config.py"
+      }
+    },
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/pricing.py"
+      }
+    },
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/cart.py",
+        "content": "from config import TAX_RATE, BOOK_DISCOUNT\n\n\ndef total(prices, kinds=None):\n    \"\"\"计算含税总价：图书类先按 BOOK_DISCOUNT 折扣，再按 TAX_RATE 计税。\"\"\"\n    if kinds is None:\n        kinds = [\"misc\"] * len(prices)\n    subtotal = sum(\n        p * (1 - BOOK_DISCOUNT) if k == \"book\" else p\n        for p, k in zip(prices, kinds)\n    )\n    return round(subtotal * (1 + TAX_RATE), 2)\n"
+      }
+    },
+    {
+      "tool": "run_tests",
+      "args": {}
+    },
+    {
+      "tool": "finish",
+      "args": {
+        "summary": "改用 config 口径：图书折扣 + 10% 税率"
+      }
+    }
+  ]
+}

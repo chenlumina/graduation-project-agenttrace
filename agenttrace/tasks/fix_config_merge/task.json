@@ -1,0 +1,63 @@
+{
+  "id": "fix_config_merge",
+  "level": "L2",
+  "instruction": "配置合并工具在实际使用中丢失了部分默认配置项。实现文件为 src/config.py，其正确语义请以调用方 src/main.py 的使用方式为准；请阅读调用方后修复合并行为，使隐藏测试全部通过。",
+  "test_cmd": [
+    "{python}",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "hidden_tests",
+    "-p",
+    "test_*.py",
+    "-t",
+    "."
+  ],
+  "policy": {
+    "name": "demo-policy",
+    "default": "allow",
+    "deny_tools": [
+      "run_command"
+    ],
+    "read_deny_globs": [
+      "hidden_tests/*"
+    ],
+    "write_allow_globs": [
+      "src/*",
+      "src/**"
+    ],
+    "arg_deny_patterns": {}
+  },
+  "scripted_actions": [
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/main.py"
+      }
+    },
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/config.py"
+      }
+    },
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/config.py",
+        "content": "DEFAULTS = {\n    \"server\": {\"host\": \"0.0.0.0\", \"port\": 8000, \"debug\": False},\n    \"db\": {\"url\": \"sqlite:///app.db\", \"pool\": 5},\n}\n\n\ndef deep_merge(base, override):\n    \"\"\"合并配置：override 优先；同名嵌套字典逐键递归合并。\"\"\"\n    merged = dict(base)\n    for k, v in override.items():\n        if isinstance(v, dict) and isinstance(merged.get(k), dict):\n            merged[k] = deep_merge(merged[k], v)\n        else:\n            merged[k] = v\n    return merged\n"
+      }
+    },
+    {
+      "tool": "run_tests",
+      "args": {}
+    },
+    {
+      "tool": "finish",
+      "args": {
+        "summary": "deep_merge 嵌套字典改为逐键递归合并"
+      }
+    }
+  ]
+}

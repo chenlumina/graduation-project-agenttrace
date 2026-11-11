@@ -43,6 +43,7 @@ class TaskPackage:
     test_cmd: list[str]
     scripted_actions: list
     policy: Policy | None = None
+    level: str = "L1"  # R-03：任务难度分级（L1 单点缺陷 / L2 多文件联动 / L3 综合推理）
 
     @classmethod
     def load(cls, path: str | Path) -> "TaskPackage":
@@ -58,6 +59,7 @@ class TaskPackage:
             test_cmd=list(cfg["test_cmd"]),
             scripted_actions=cfg.get("scripted_actions") or [],
             policy=Policy.from_dict(cfg.get("policy")),
+            level=str(cfg.get("level", "L1")),
         )
 
     def resolved_test_cmd(self) -> list[str]:

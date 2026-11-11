@@ -1,0 +1,63 @@
+{
+  "id": "fix_area_dispatch",
+  "level": "L2",
+  "instruction": "几何模块的面积计算结果偏大且数值特征可疑。相关代码分布在 src/ 下多个文件中，缺陷位置不在调用方 dispatch.py——请先弄清各函数被如何使用，再定位并修复，使隐藏测试全部通过。",
+  "test_cmd": [
+    "{python}",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "hidden_tests",
+    "-p",
+    "test_*.py",
+    "-t",
+    "."
+  ],
+  "policy": {
+    "name": "demo-policy",
+    "default": "allow",
+    "deny_tools": [
+      "run_command"
+    ],
+    "read_deny_globs": [
+      "hidden_tests/*"
+    ],
+    "write_allow_globs": [
+      "src/*",
+      "src/**"
+    ],
+    "arg_deny_patterns": {}
+  },
+  "scripted_actions": [
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/dispatch.py"
+      }
+    },
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/shapes/circle.py"
+      }
+    },
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/shapes/circle.py",
+        "content": "PI = 3.141592653589793\n\ndef area(r):\n    \"\"\"圆的面积（半径 r）：pi * r^2。\"\"\"\n    return PI * r * r\n"
+      }
+    },
+    {
+      "tool": "run_tests",
+      "args": {}
+    },
+    {
+      "tool": "finish",
+      "args": {
+        "summary": "circle.area 误用周长公式 2*pi*r，改为面积公式 pi*r^2"
+      }
+    }
+  ]
+}

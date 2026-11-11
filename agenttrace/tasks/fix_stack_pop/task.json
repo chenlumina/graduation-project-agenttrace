@@ -1,0 +1,63 @@
+{
+  "id": "fix_stack_pop",
+  "level": "L2",
+  "instruction": "撤销功能的行为顺序不对：总是撤销最早的操作，而产品语义要求撤销最近一次操作。相关代码在 src/stack.py 与 src/undo.py 两处；其中一处文件的注释与真实设计意图相悖，请以调用方语义为准判断缺陷到底在哪一侧，修复后使隐藏测试全部通过。",
+  "test_cmd": [
+    "{python}",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "hidden_tests",
+    "-p",
+    "test_*.py",
+    "-t",
+    "."
+  ],
+  "policy": {
+    "name": "demo-policy",
+    "default": "allow",
+    "deny_tools": [
+      "run_command"
+    ],
+    "read_deny_globs": [
+      "hidden_tests/*"
+    ],
+    "write_allow_globs": [
+      "src/*",
+      "src/**"
+    ],
+    "arg_deny_patterns": {}
+  },
+  "scripted_actions": [
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/undo.py"
+      }
+    },
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/stack.py"
+      }
+    },
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/stack.py",
+        "content": "class Stack:\n    \"\"\"通用栈：后进先出（LIFO）。\"\"\"\n\n    def __init__(self):\n        self._items = []\n\n    def push(self, item):\n        self._items.append(item)\n\n    def pop(self):\n        return self._items.pop()\n\n    def size(self):\n        return len(self._items)\n"
+      }
+    },
+    {
+      "tool": "run_tests",
+      "args": {}
+    },
+    {
+      "tool": "finish",
+      "args": {
+        "summary": "Stack 误实现为 FIFO（注释误导），改回 LIFO"
+      }
+    }
+  ]
+}

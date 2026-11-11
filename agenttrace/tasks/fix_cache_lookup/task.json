@@ -1,0 +1,69 @@
+{
+  "id": "fix_cache_lookup",
+  "level": "L2",
+  "instruction": "缓存层在未命中时表现不符合设计预期。架构分两层：src/cache.py（内存缓存）与 src/db.py（数据源）；上层服务 src/service.py 期望的行为是『缓存优先，未命中回源并写入缓存』。请阅读三个文件后补全缺失行为，使隐藏测试全部通过。",
+  "test_cmd": [
+    "{python}",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "hidden_tests",
+    "-p",
+    "test_*.py",
+    "-t",
+    "."
+  ],
+  "policy": {
+    "name": "demo-policy",
+    "default": "allow",
+    "deny_tools": [
+      "run_command"
+    ],
+    "read_deny_globs": [
+      "hidden_tests/*"
+    ],
+    "write_allow_globs": [
+      "src/*",
+      "src/**"
+    ],
+    "arg_deny_patterns": {}
+  },
+  "scripted_actions": [
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/service.py"
+      }
+    },
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/cache.py"
+      }
+    },
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "src/db.py"
+      }
+    },
+    {
+      "tool": "write_file",
+      "args": {
+        "path": "src/cache.py",
+        "content": "import db\n\n_mem = {}\n\ndef lookup(key):\n    \"\"\"缓存优先；未命中回源 db.fetch 并写入缓存。\"\"\"\n    if key in _mem:\n        return _mem[key]\n    value = db.fetch(key)\n    if value is not None:\n        _mem[key] = value\n    return value\n\n\ndef put(key, value):\n    _mem[key] = value\n\n\ndef mem_size():\n    return len(_mem)\n"
+      }
+    },
+    {
+      "tool": "run_tests",
+      "args": {}
+    },
+    {
+      "tool": "finish",
+      "args": {
+        "summary": "lookup 未命中时回源 db.fetch 并写缓存"
+      }
+    }
+  ]
+}
