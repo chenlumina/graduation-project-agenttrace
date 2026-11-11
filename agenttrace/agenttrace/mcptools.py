@@ -204,6 +204,8 @@ class AuditedMCPClient:
 
         text = res["text"]
         status = "error" if res["isError"] else "ok"
+        # R-10：diff 暂存，待 tool_call 落库后挂为其子事件（与本地通道同一三层结构）
+        pending_diff: tuple[str, str, Any] | None = None
         if tool == "write_file" and status == "ok" and text.startswith("---"):
             path = str(args.get("path", ""))
             audit = (
@@ -211,12 +213,15 @@ class AuditedMCPClient:
                 if path.endswith(".py")
                 else None
             )
-            self.collector.file_diff(path, text, parent_id, audit=audit)
+            pending_diff = (path, text, audit)
         # 注入特征检测（H-3）：MCP 通道返回的文件内容同样可能夹带提示注入
         extra = None
         if status == "ok" and tool in ("read_file", "run_tests"):
             flags = detect_injection(text)
             if flags:
                 extra = {"injection_flags": flags}
-        self.collector.tool_call(tool, args, text[:2000], status, parent_id, extra=extra)
+        tool_ev = self.collector.tool_call(tool, args, text[:2000], status, parent_id, extra=extra)
+        if pending_diff is not None:
+            _path, _diff, _audit = pending_diff
+            self.collector.file_diff(_path, _diff, tool_ev.id, audit=_audit)
         return status, text[:2000], text

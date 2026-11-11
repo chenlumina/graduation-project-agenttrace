@@ -11,7 +11,9 @@
 - mcp_audit    : decision, tool, rule_id, reason           —— MCP 协议层声明事件（declared/undeclared）
 - policy_audit : decision, tool, rule_id, reason           —— 权限策略决策（allow/deny，通道无关）
 
-事件通过 parent_id 建立父子关系（如 tool_call 挂在其触发的 llm_call 之下）。
+事件通过 parent_id 建立父子关系：tool_call 挂在其触发的 llm_call 之下；
+file_diff（及写文件衍生的代码审计）挂在产生它的 tool_call 之下（R-10 起），
+形成 llm_call → tool_call → file_diff 三层因果链，改动可归属到具体工具调用。
 
 schema 版本：v3 起（v3 新增 policy_audit 事件：把授权决策与 MCP 传输解耦，
 本地通道与 MCP 通道共用同一套策略评估与留痕口径）。

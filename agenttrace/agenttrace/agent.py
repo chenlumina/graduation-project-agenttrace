@@ -230,6 +230,9 @@ class MiniAgent:
             else:
                 # 本地通道
                 extra: dict[str, Any] | None = None
+                # R-10：write_file 的 diff 暂存，待 tool_call 落库后挂为其子事件，
+                # 形成 llm_call → tool_call → file_diff 三层结构（改动可归属到具体工具调用）
+                pending_diff: tuple[str, str, Any] | None = None
                 try:
                     if tool not in KNOWN_TOOLS:
                         result = f"未知工具: {tool}"
@@ -262,7 +265,7 @@ class MiniAgent:
                                 if isinstance(args.get("path"), str) and args["path"].endswith(".py")
                                 else None
                             )
-                            collector.file_diff(args["path"], diff, parent_id=ev.id, audit=audit)
+                            pending_diff = (args["path"], diff, audit)  # R-10：暂存，挂到 tool_call 下
                             result = {"diff": diff}
                             payload = wrap_untrusted(
                                 "write_file", diff[:2000] or "(无变化)", args["path"]
@@ -308,7 +311,10 @@ class MiniAgent:
                     result = f"工具执行失败: {type(e).__name__}: {e}"
                     payload = result
                     status = "error"
-                collector.tool_call(tool, args, result, status, parent_id=ev.id, extra=extra)
+                tool_ev = collector.tool_call(tool, args, result, status, parent_id=ev.id, extra=extra)
+                if pending_diff is not None:  # R-10：file_diff 归属到产生它的 tool_call 之下
+                    _path, _diff, _audit = pending_diff
+                    collector.file_diff(_path, _diff, parent_id=tool_ev.id, audit=_audit)
 
             messages.append({"role": "user", "content": f"TOOL_RESULT[{tool}/{status}]: {payload}"})
 

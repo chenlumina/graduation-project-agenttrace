@@ -74,6 +74,22 @@ class TestEndToEnd(unittest.TestCase):
         doc = self.store.export(res.attempt_id)
         self.assertEqual(len(doc["events"]), len(events))
 
+    def test_file_diff_nested_under_tool_call(self):
+        """R-10：file_diff 必须挂在产生它的 write_file tool_call 之下（三层结构）。"""
+        res = TaskRunner(self.store).run(self.task, ScriptedLLM(GOOD_ACTIONS))
+        self.assertTrue(res.passed)
+        events = self.store.events(res.attempt_id)
+        by_id = {e.id: e for e in events}
+        diffs = [e for e in events if e.type == "file_diff"]
+        self.assertEqual(len(diffs), 1)
+        parent = by_id.get(diffs[0].parent_id)
+        self.assertIsNotNone(parent, "file_diff 的父事件必须是 tool_call，而非 llm_call")
+        self.assertEqual(parent.type, "tool_call")
+        self.assertEqual(parent.data["tool"], "write_file")
+        grand = by_id.get(parent.parent_id)
+        self.assertIsNotNone(grand)
+        self.assertEqual(grand.type, "llm_call")
+
     def test_broken_agent_marked_error(self):
         # 动作不是合法 JSON：Agent 异常 → error 状态，判定仍由隐藏测试给出
         res = TaskRunner(self.store).run(self.task, ScriptedLLM(["这不是JSON"]))
