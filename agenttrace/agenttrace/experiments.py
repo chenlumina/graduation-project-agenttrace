@@ -184,21 +184,26 @@ def run_experiment(
     progress: Callable[[str], None] = print,
     allow_local_commands: bool = False,
     fault: "str | Any | None" = None,  # R-05：故障注入 profile（名称或 FaultProfile）
+    resume: bool = False,  # R-20：断点续跑（同库跳过已完成组合）
 ) -> dict[str, Any]:
     """顺序执行 models × tasks × repeat 次评测，落同一个实验库并产出对比报告。
 
     fault：R-05 扰动实验——传预置 profile 名（slow_tool / flaky_tool / prompt_injection）
     或 FaultProfile 实例；每次尝试的 meta 记录 fault 配置，报告标注扰动模式。
+
+    resume（R-20）：目标库已存在且 resume=True 时续跑——沿用库中既有 run_id，
+    跳过已完成的 (model, task, repeat) 组合，历史行回填进报告；单任务异常被捕获
+    并记为失败行，不中断整批实验（异常信息写入 rows[].error）。
     """
     from .faults import resolve_fault
     profile = resolve_fault(fault) if isinstance(fault, str) else fault
 
     db_path = Path(db_path)
-    if db_path.exists():
+    db_exists = db_path.exists()
+    if db_exists and not resume:
         raise FileExistsError(f"实验数据库已存在，拒绝覆盖（防污染）: {db_path}")
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    run_id = f"exp-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     started = datetime.now().isoformat(timespec="seconds")
     store = TraceStore(db_path)
     tasks = [TaskPackage.load(d) for d in task_dirs]
@@ -207,7 +212,35 @@ def run_experiment(
     if profile is not None:
         mode += f"+fault:{profile.name}"
 
+    # R-20：续跑时沿用既有 run_id 并从历史轨迹回填已完成组合
     rows: list[dict[str, Any]] = []
+    if db_exists:
+        history = [m for m in store.list_attempts() if m.meta.get("run_id")]
+        run_ids = sorted({str(m.meta["run_id"]) for m in history})
+        run_id = run_ids[0] if run_ids else f"exp-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        for m in history:
+            if str(m.meta.get("run_id")) != run_id:
+                continue
+            p, c = _tokens(store, m.attempt_id)
+            rows.append({
+                "model": str(m.meta.get("model", "")),
+                "task": str(m.meta.get("task", "")),
+                "repeat": int(m.meta.get("repeat", 1)),
+                "attempt_id": m.attempt_id,
+                "status": m.status,
+                "passed": m.status == "passed",
+                "prompt_tokens": p,
+                "completion_tokens": c,
+                "total_tokens": p + c,
+                "cost_cny": compute_cost(str(m.meta.get("model", "")), p, c),
+                "duration_s": _duration_s(store, m.attempt_id),
+                "resumed": True,
+            })
+    else:
+        run_id = f"exp-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    done_keys = {(r["model"], r["task"], r["repeat"]) for r in rows}
+    skipped = 0
+
     total = len(models) * len(tasks) * repeat
     done = 0
     try:
@@ -215,18 +248,33 @@ def run_experiment(
             for task in tasks:
                 for rep in range(1, repeat + 1):
                     done += 1
+                    if (model, task.id, rep) in done_keys:
+                        skipped += 1
+                        progress(f"[{done}/{total}] 跳过（已完成）model={model} task={task.id} repeat={rep}")
+                        continue
                     progress(f"[{done}/{total}] model={model} task={task.id} repeat={rep}")
-                    llm = llm_factory(model, task)
-                    res = TaskRunner(store).run(
-                        task, llm, max_turns=max_turns, use_docker=use_docker,
-                        allow_local_commands=allow_local_commands,
-                        faults=profile,  # R-05：扰动注入
-                        meta_extra={
-                            "run_id": run_id, "model": model,
-                            "task": task.id, "repeat": rep,
-                            **({"fault": profile.to_meta()} if profile is not None else {}),
-                        },
-                    )
+                    try:
+                        llm = llm_factory(model, task)
+                        res = TaskRunner(store).run(
+                            task, llm, max_turns=max_turns, use_docker=use_docker,
+                            allow_local_commands=allow_local_commands,
+                            faults=profile,  # R-05：扰动注入
+                            meta_extra={
+                                "run_id": run_id, "model": model,
+                                "task": task.id, "repeat": rep,
+                                **({"fault": profile.to_meta()} if profile is not None else {}),
+                            },
+                        )
+                    except Exception as e:  # R-20：单任务异常不中断整批实验
+                        progress(f"  ! 任务异常已捕获: {type(e).__name__}: {e}")
+                        rows.append({
+                            "model": model, "task": task.id, "repeat": rep,
+                            "attempt_id": "", "status": "error", "passed": False,
+                            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+                            "cost_cny": 0.0, "duration_s": None,
+                            "error": f"{type(e).__name__}: {e}",
+                        })
+                        continue
                     p, c = _tokens(store, res.attempt_id)
                     rows.append({
                         "model": model,
@@ -291,4 +339,6 @@ def run_experiment(
         "rows": rows,
         "aggregates": aggregates,
         "total_failed": sum(1 for r in rows if not r["passed"]),
+        "skipped": skipped,  # R-20：续跑跳过的已完成组合数
+        "errored": sum(1 for r in rows if r.get("error")),  # R-20：异常捕获的失败行数
     }

@@ -110,6 +110,38 @@ class TestExperiment(unittest.TestCase):
         self.assertIn("帕累托", md)
         self.assertFalse(summary["aggregates"]["half-fail"]["cost_fully_priced"])
 
+    def test_resume_skips_completed(self):
+        """R-20：同库续跑跳过已完成组合，历史行回填、run_id 沿用。"""
+        db = Path(self.tmp.name) / "exp-resume.db"
+        first = run_experiment(["mA"], self.task_roots[:2], db,
+                               llm_factory=scripted_factory, sleep_s=0)
+        self.assertEqual(first["skipped"], 0)
+        self.assertEqual(len(first["rows"]), 2)
+
+        second = run_experiment(["mA"], self.task_roots[:2], db,
+                                llm_factory=scripted_factory, sleep_s=0, resume=True)
+        self.assertEqual(second["skipped"], 2)
+        self.assertEqual(len(second["rows"]), 2)  # 历史行回填，不重复
+        self.assertEqual(second["run_id"], first["run_id"])  # 沿用 run_id
+        self.assertTrue(all(r.get("resumed") for r in second["rows"]))
+        self.assertEqual(second["aggregates"]["mA"]["passed"], 2)
+
+    def test_single_task_error_does_not_abort(self):
+        """R-20：单任务抛异常被捕获记为失败行，其余任务继续执行。"""
+        def exploding_factory(model, task):
+            if task.id == self.task_roots[0].name:
+                raise RuntimeError("boom: injected setup failure")
+            return ScriptedLLM(task.scripted_actions)
+
+        db = Path(self.tmp.name) / "exp-fault-tolerance.db"
+        summary = run_experiment(["mX"], self.task_roots[:2], db,
+                                 llm_factory=exploding_factory, sleep_s=0)
+        self.assertEqual(len(summary["rows"]), 2)  # 两行都在
+        self.assertEqual(summary["errored"], 1)
+        self.assertEqual(sum(1 for r in summary["rows"] if r["passed"]), 1)
+        err_row = [r for r in summary["rows"] if r.get("error")][0]
+        self.assertIn("boom", err_row["error"])
+
     def test_refuses_existing_db(self):
         db = Path(self.tmp.name) / "existing.db"
         db.write_bytes(b"x")

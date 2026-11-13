@@ -85,6 +85,10 @@ def main(argv: list[str] | None = None) -> int:
         help="本地模式下允许 Agent 执行 run_command（默认禁止）",
     )
     p_x.add_argument("--sleep", type=float, default=1.0, help="每次尝试之间的间隔秒数")
+    p_x.add_argument(
+        "--resume", action="store_true",
+        help="R-20 断点续跑：目标库已存在时沿用 run_id 跳过已完成组合，单任务异常不中断整批",
+    )
 
     args = parser.parse_args(argv)
 
@@ -192,8 +196,10 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("tasks/ 下没有任务")
         if args.db:
             db = Path(args.db)
-            if db.exists():
-                parser.error(f"实验库已存在，拒绝写入（防污染）: {db}")
+            if db.exists() and not args.resume:
+                parser.error(
+                    f"实验库已存在，拒绝写入（防污染）: {db}（确需续跑请加 --resume）"
+                )
         else:
             db = default_db_path()
             db.parent.mkdir(parents=True, exist_ok=True)
@@ -207,6 +213,7 @@ def main(argv: list[str] | None = None) -> int:
             repeat=args.repeat, sleep_s=args.sleep,
             allow_local_commands=args.allow_local_commands,
             fault=args.fault,  # R-05：扰动实验
+            resume=args.resume,  # R-20：断点续跑
         )
         print(summary["summary_md"])
         print(f"\n实验库: {summary['db']}")
