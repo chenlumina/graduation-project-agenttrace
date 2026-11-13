@@ -132,7 +132,7 @@ def build_summary_md(
             f"| {a['avg_tokens']} | {tok_std} | {avg_dur} | {dur_std} | {cost_txt} |"
         )
     lines.append("")
-    lines.append("*\\* 含未计价模型（价目表无此模型），成本为部分折算。*")
+    lines.append("注：带 * 号的模型价目表未收录，成本为部分折算。")
 
     # R-17：通过率—成本联合分析（"效果更好但成本更高"的权衡呈现）
     lines += [
@@ -158,9 +158,10 @@ def build_summary_md(
             for other in models
         )
         tag = "被占优" if dominated else "帕累托最优"
+        per_pass_txt = f"{per_pass:.4f}" if per_pass is not None else "-"
         lines.append(
             f"| {m} | {a['pass_at_1'] * 100:.1f}% | {a['task_pass_at_k'] * 100:.1f}% "
-            f"| {cost:.4f} | {f'{per_pass:.4f}' if per_pass is not None else '-'} | {tag} |"
+            f"| {cost:.4f} | {per_pass_txt} | {tag} |"
         )
     lines += ["", "## 任务 × 模型", "", "| 任务 | " + " | ".join(models) + " |",
               "|---|" * 1 + "---|" * len(models)]

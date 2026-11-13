@@ -21,6 +21,7 @@ import json
 from typing import Any
 
 from .model import TraceEvent
+from .pricing import compute_cost, load_prices
 
 
 def _tool_key(ev: TraceEvent) -> tuple:
@@ -105,7 +106,6 @@ def compute_metrics(events: list[TraceEvent], prices: dict | None = None) -> dic
     completion = sum(int(e.data.get("usage", {}).get("completion_tokens", 0)) for e in llm_calls)
 
     # R-17：成本金额折算（模型无价目时不猜测，如实标注未计价）
-    from .pricing import compute_cost, load_prices
     price_table = prices if prices is not None else load_prices()
     cost_total = 0.0
     unpriced_tokens = 0

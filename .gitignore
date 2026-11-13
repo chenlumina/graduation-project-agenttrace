@@ -20,3 +20,6 @@ _err.py
 _status.py
 #评审报告
 AgentTrace_代码评审报告.docx
+
+# WorkBuddy 工作目录（本地记忆/日志）
+.workbuddy/
