@@ -147,6 +147,13 @@ def compute_metrics(events: list[TraceEvent], prices: dict | None = None) -> dic
         for e in sorted(timed, key=lambda x: int(x.data["duration_ms"]), reverse=True)[:5]
     ]
 
+    # R-18：上下文增长与工具返回截断（长上下文是 Agent 失败的重要诱因）
+    context_series = [
+        int(e.data["context_chars"]) for e in llm_calls if e.data.get("context_chars") is not None
+    ]
+    truncated_calls = sum(1 for e in tool_calls if e.data.get("truncated"))
+    max_context_chars = max(context_series) if context_series else 0
+
     passed = bool(run_results and run_results[-1].data["passed"])
 
     # R-15：重试过程指标——解析失败 / 空回复各自的重试计数（读结构化 error_code）
@@ -193,6 +200,15 @@ def compute_metrics(events: list[TraceEvent], prices: dict | None = None) -> dic
         "error_event_count": len(error_events),
         "parse_error_retries": parse_retries,
         "empty_response_retries": empty_retries,
+        "context_chars_per_turn": context_series,
+        "max_context_chars": max_context_chars,
+        "context_growth_chars": (
+            context_series[-1] - context_series[0] if len(context_series) >= 2 else 0
+        ),
+        "truncated_tool_calls": truncated_calls,
+        "truncated_tool_rate": (
+            round(truncated_calls / len(tool_calls), 4) if tool_calls else 0.0
+        ),
         "audit_total": len(audit_events),
         "audit_denied": sum(1 for e in audit_events if e.data.get("decision") == "deny"),
         "code_audit_high": sum(

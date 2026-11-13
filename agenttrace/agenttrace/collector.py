@@ -42,6 +42,7 @@ class TraceCollector:
         params: Optional[dict[str, Any]] = None,
         finish_reason: str = "",
         incremental: bool = False,
+        context_chars: Optional[int] = None,
     ) -> TraceEvent:
         data: dict[str, Any] = {
             "model": model,
@@ -58,6 +59,8 @@ class TraceCollector:
             data["params"] = params
         if finish_reason:
             data["finish_reason"] = finish_reason
+        if context_chars is not None:
+            data["context_chars"] = context_chars  # R-18：本轮 prompt 总字符数
         return self.emit("llm_call", data, parent_id)
 
     def tool_call(

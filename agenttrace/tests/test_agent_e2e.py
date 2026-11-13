@@ -5,7 +5,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 测试自举：直接从源码导入
 
+from agenttrace.collector import TraceCollector
 from agenttrace.llm import LLMResponse, ScriptedLLM
+from agenttrace.model import AttemptMeta
 from agenttrace.runner import TaskPackage, TaskRunner
 from agenttrace.store import TraceStore
 
@@ -223,6 +225,57 @@ class TestParseErrorRetry(unittest.TestCase):
             if e.type == "error" and e.data.get("error_code") == "parse_error"
         ]
         self.assertEqual(len(parse_errors), 3)  # 3 次重试后才放弃
+
+
+class TestReadPagination(unittest.TestCase):
+    """R-18：read_file 支持 offset/limit 分页，截断信息与上下文长度完整留痕。"""
+
+    def setUp(self):
+        # Windows 下 sqlite 句柄释放偶有延迟，忽略清理错误避免误报
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.root = Path(self.tmp.name)
+        self.store = TraceStore(self.root / "t.db")
+        self.store.begin_attempt(
+            AttemptMeta(attempt_id="a", task_id="t", agent="mini-agent", model="m")
+        )
+        self.collector = TraceCollector(self.store, "a")
+
+    def tearDown(self):
+        self.store.close()
+        self.tmp.cleanup()
+
+    def test_pagination_and_metadata(self):
+        from agenttrace.agent import MiniAgent
+        from agenttrace.tools import Workspace
+
+        (self.root / "big.txt").write_text("x" * 5000, encoding="utf-8")
+        llm = ScriptedLLM([
+            {"tool": "read_file", "args": {"path": "big.txt"}},
+            {"tool": "read_file", "args": {"path": "big.txt", "offset": 2000, "limit": 2000}},
+            {"tool": "read_file", "args": {"path": "big.txt", "offset": 4000}},
+            {"tool": "finish", "args": {}},
+        ])
+        MiniAgent(llm).run("read", ["python", "-c", "pass"], Workspace(self.root), self.collector)
+        calls = [e for e in self.store.events("a") if e.type == "tool_call"]
+        # 第 1 次：默认 limit=2000 → 截断
+        self.assertTrue(calls[0].data["truncated"])
+        self.assertEqual(calls[0].data["original_length"], 5000)
+        self.assertEqual(calls[0].data["limit"], 2000)
+        self.assertEqual(len(calls[0].data["result"]), 2000)
+        # 第 2 次：offset=2000 → 仍截断（还剩 1000）
+        self.assertTrue(calls[1].data["truncated"])
+        self.assertEqual(calls[1].data["offset"], 2000)
+        # 第 3 次：offset=4000 → 剩余 1000，读完不截断
+        self.assertFalse(calls[2].data["truncated"])
+        self.assertEqual(len(calls[2].data["result"]), 1000)
+        # R-18：每轮上下文长度均已记录且单调
+        series = [
+            e.data["context_chars"] for e in self.store.events("a")
+            if e.type == "llm_call"
+        ]
+        self.assertEqual(len(series), 4)
+        self.assertTrue(all(isinstance(x, int) and x > 0 for x in series))
+        self.assertEqual(series, sorted(series))
 
 
 class TestEmptyResponseRetry(unittest.TestCase):

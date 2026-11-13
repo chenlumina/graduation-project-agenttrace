@@ -203,6 +203,26 @@ class TestMetrics(unittest.TestCase):
         self.assertIsNone(compute_cost("nope", 100, 100, prices))
         self.assertAlmostEqual(compute_cost("m", 0, 1_000_000, prices), 8.0, places=4)
 
+    def test_context_and_truncation_metrics(self):
+        """R-18：上下文增长与工具截断率指标。"""
+        def script(c):
+            c.llm_call(model="m", messages=[], response="r",
+                       usage={"prompt_tokens": 1, "completion_tokens": 1}, context_chars=500)
+            c.tool_call("read_file", {"path": "a"}, "x" * 10, "ok",
+                        extra={"truncated": True, "original_length": 9999})
+            c.llm_call(model="m", messages=[], response="r",
+                       usage={"prompt_tokens": 1, "completion_tokens": 1}, context_chars=1800)
+            c.tool_call("read_file", {"path": "b"}, "short", "ok",
+                        extra={"truncated": False, "original_length": 5})
+            c.run_result(True, "OK")
+        evs = self.store.events(self.collect(script))
+        m = compute_metrics(evs)
+        self.assertEqual(m["context_chars_per_turn"], [500, 1800])
+        self.assertEqual(m["max_context_chars"], 1800)
+        self.assertEqual(m["context_growth_chars"], 1300)
+        self.assertEqual(m["truncated_tool_calls"], 1)
+        self.assertEqual(m["truncated_tool_rate"], 0.5)
+
     def test_clean_pass(self):
         def script(c):
             e1 = c.llm_call(model="m", messages=[], response="r",
