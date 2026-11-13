@@ -128,11 +128,41 @@ class TraceStore:
         ).fetchone()
         return _row_to_meta(row) if row is not None else None
 
-    def list_attempts(self) -> list[AttemptMeta]:
-        rows = self._conn.execute(
-            f"SELECT {_ATTEMPT_COLS} FROM attempts ORDER BY started_at"
-        ).fetchall()
+    def list_attempts(
+        self, limit: Optional[int] = None, offset: int = 0, task_id: Optional[str] = None,
+    ) -> list[AttemptMeta]:
+        """R-19：支持分页与按任务过滤（limit=None 时返回全部，兼容旧调用）。"""
+        sql = f"SELECT {_ATTEMPT_COLS} FROM attempts"
+        args: list = []
+        if task_id:
+            sql += " WHERE task_id = ?"
+            args.append(task_id)
+        sql += " ORDER BY started_at"
+        if limit is not None:
+            sql += " LIMIT ? OFFSET ?"
+            args += [int(limit), int(offset)]
+        rows = self._conn.execute(sql, args).fetchall()
         return [_row_to_meta(r) for r in rows]
+
+    def count_attempts(self, task_id: Optional[str] = None) -> int:
+        sql = "SELECT COUNT(*) FROM attempts"
+        args: list = []
+        if task_id:
+            sql += " WHERE task_id = ?"
+            args.append(task_id)
+        return int(self._conn.execute(sql, args).fetchone()[0])
+
+    def update_attempt_meta(self, attempt_id: str, patch: dict[str, Any]) -> None:
+        """R-19：合并更新 attempt.meta（用于指标预计算等派生数据落库）。"""
+        meta = self.get_attempt(attempt_id)
+        if meta is None:
+            raise KeyError(f"尝试不存在: {attempt_id}")
+        merged = {**meta.meta, **patch}
+        self._conn.execute(
+            "UPDATE attempts SET meta = ? WHERE attempt_id = ?",
+            (json.dumps(merged, ensure_ascii=False), attempt_id),
+        )
+        self._conn.commit()
 
     def events(self, attempt_id: str) -> list[TraceEvent]:
         rows = self._conn.execute(
@@ -153,14 +183,24 @@ class TraceStore:
             for r in rows
         ]
 
+    def count_events(self, attempt_id: str) -> int:
+        return int(self._conn.execute(
+            "SELECT COUNT(*) FROM events WHERE attempt_id = ?", (attempt_id,)
+        ).fetchone()[0])
+
     def export(self, attempt_id: str) -> dict[str, Any]:
-        """导出为可回放的轨迹文档（schema_version + 尝试元信息 + 事件流）。"""
+        """导出为可回放的轨迹文档（schema_version + 尝试元信息 + 事件流）。
+
+        派生字段（_metrics / _classification 等以 _ 开头的键）不随导出下发。
+        """
         meta = self.get_attempt(attempt_id)
         if meta is None:
             raise KeyError(f"尝试不存在: {attempt_id}")
+        attempt = meta.to_dict()
+        attempt["meta"] = {k: v for k, v in meta.meta.items() if not k.startswith("_")}
         return {
             "schema_version": SCHEMA_VERSION,
-            "attempt": meta.to_dict(),
+            "attempt": attempt,
             "events": [ev.to_dict() for ev in self.events(attempt_id)],
         }
 

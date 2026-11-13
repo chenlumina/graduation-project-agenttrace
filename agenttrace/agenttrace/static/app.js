@@ -36,7 +36,7 @@ const LABEL_CN = {
   workspace_escape: "工作区越界尝试", unknown_tool: "调用未知工具", unknown: "未知原因",
 };
 
-const state = { attempts: [], doc: null, metrics: null, cursor: 0, playing: false, timer: null, t0: 0, span: 1 };
+const state = { attempts: [], doc: null, metrics: null, cursor: 0, playing: false, timer: null, t0: 0, span: 1, pageSize: 100, totalAttempts: 0 };
 
 /* 访问令牌：服务开启鉴权时，通过 URL 查询参数 ?token=... 传入 */
 const TOKEN = new URLSearchParams(location.search).get("token") || "";
@@ -91,8 +91,10 @@ function shortDesc(ev) {
 
 async function loadAttempts() {
   try {
-    const data = await api("/api/attempts");
+    // R-19：分页拉取（最新一页），total 用于提示总量
+    const data = await api(`/api/attempts?page=1&page_size=${state.pageSize}`);
     state.attempts = (data.attempts || []).slice().reverse();
+    state.totalAttempts = data.total ?? state.attempts.length;
     renderList();
   } catch (e) {
     $("attempt-list").innerHTML = `<div class="hint">加载失败：${esc(e.message)}</div>`;
@@ -107,8 +109,12 @@ function renderList() {
     return;
   }
   const nPass = rows.filter((a) => a.status === "passed").length;
+  const total = state.totalAttempts || rows.length;
+  const cap = total > rows.length
+    ? `Attempts · 最近 ${rows.length} / 共 ${total}`
+    : `Attempts · ${rows.length}`;
   box.innerHTML =
-    `<div class="rail-cap">Attempts · ${rows.length}</div>
+    `<div class="rail-cap">${cap}</div>
      <div class="filters"><span class="fchip on">全部 ${rows.length}</span><span class="fchip">通过 ${nPass}</span><span class="fchip">失败 ${rows.length - nPass}</span></div>` +
     rows
       .map((a) => {

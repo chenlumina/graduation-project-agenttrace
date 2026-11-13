@@ -71,19 +71,45 @@ def create_app(db_path: str | Path, token: str | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="attempt not found")
 
     @app.get("/api/attempts")
-    def api_attempts():
+    def api_attempts(page: int = 1, page_size: int = 20, task_id: str | None = None):
+        """R-19：分页列表（page/page_size，task_id 过滤）；派生字段（_ 前缀）不下发。"""
+        page = max(1, page)
+        page_size = max(1, min(page_size, 200))
         store = TraceStore(db)
         try:
-            return {"attempts": [m.to_dict() for m in store.list_attempts()]}
+            total = store.count_attempts(task_id)
+            metas = store.list_attempts(
+                limit=page_size, offset=(page - 1) * page_size, task_id=task_id
+            )
+            items = []
+            for m in metas:
+                d = m.to_dict()
+                d["meta"] = {k: v for k, v in m.meta.items() if not k.startswith("_")}
+                items.append(d)
+            return {
+                "attempts": items,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": (total + page_size - 1) // page_size,
+            }
         finally:
             store.close()
 
     @app.get("/api/attempts/{attempt_id}")
-    def api_attempt(attempt_id: str):
+    def api_attempt(attempt_id: str, events_offset: int = 0, events_limit: int = 0):
+        """R-19：支持轨迹分段取事件（events_limit=0 返回全量，兼容回放）。"""
         _check_attempt_id(attempt_id)
         store = TraceStore(db)
         try:
-            return store.export(attempt_id)
+            doc = store.export(attempt_id)
+            if events_limit > 0:
+                start = max(0, events_offset)
+                doc["events"] = doc["events"][start:start + events_limit]
+                doc["events_offset"] = start
+                doc["events_limit"] = events_limit
+            doc["events_total"] = store.count_events(attempt_id)
+            return doc
         except KeyError:
             raise HTTPException(status_code=404, detail="attempt not found")
         finally:
@@ -97,11 +123,27 @@ def create_app(db_path: str | Path, token: str | None = None) -> FastAPI:
             meta = store.get_attempt(attempt_id)
             if meta is None:
                 raise HTTPException(status_code=404, detail="attempt not found")
+            # R-19：优先读预计算结果；缺失（旧库/未预计算）则现算并回写缓存
+            cached_m = meta.meta.get("_metrics")
+            cached_c = meta.meta.get("_classification")
+            if cached_m is not None and cached_c is not None:
+                return {
+                    "attempt_id": attempt_id,
+                    "metrics": cached_m,
+                    "classification": cached_c,
+                    "cached": True,
+                }
             events = store.events(attempt_id)
+            metrics = compute_metrics(events)
+            classification = classify(events)
+            store.update_attempt_meta(
+                attempt_id, {"_metrics": metrics, "_classification": classification}
+            )
             return {
                 "attempt_id": attempt_id,
-                "metrics": compute_metrics(events),
-                "classification": classify(events),
+                "metrics": metrics,
+                "classification": classification,
+                "cached": False,
             }
         finally:
             store.close()

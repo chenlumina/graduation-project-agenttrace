@@ -255,4 +255,14 @@ class TaskRunner:
                 shutil.rmtree(extra_dir, ignore_errors=True)
 
         self.store.finish_attempt(attempt_id, status)
+        # R-19：指标预计算落库——查询端直接读 meta["_metrics"]，不再每次请求现算
+        try:
+            from .metrics import classify, compute_metrics
+            evs = self.store.events(attempt_id)
+            self.store.update_attempt_meta(attempt_id, {
+                "_metrics": compute_metrics(evs),
+                "_classification": classify(evs),
+            })
+        except Exception:  # 预计算失败不影响判定结果，查询端会回退现算
+            pass
         return AttemptResult(attempt_id=attempt_id, status=status, passed=passed)

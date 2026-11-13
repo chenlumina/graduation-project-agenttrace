@@ -75,6 +75,33 @@ class TestServerAPI(unittest.TestCase):
         self.assertEqual(len(body["attempts"]), 1)
         self.assertEqual(body["attempts"][0]["status"], "passed")
         self.assertEqual(body["attempts"][0]["attempt_id"], self.attempt_id)
+        # R-19：分页元数据；派生字段（_metrics）不下发
+        self.assertEqual(body["total"], 1)
+        self.assertEqual(body["total_pages"], 1)
+        self.assertNotIn("_metrics", body["attempts"][0]["meta"])
+
+    def test_attempts_pagination_params(self):
+        """R-19：page_size 边界与 task_id 过滤。"""
+        _, body = self._get_json("/api/attempts?page=1&page_size=1")
+        self.assertEqual(len(body["attempts"]), 1)
+        _, body2 = self._get_json("/api/attempts?page=99&page_size=1")
+        self.assertEqual(len(body2["attempts"]), 0)
+
+    def test_attempt_events_segments(self):
+        """R-19：轨迹分段取事件（events_limit>0）与总数。"""
+        status, body = self._get_json(f"/api/attempts/{self.attempt_id}?events_offset=0&events_limit=2")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(body["events"]), 2)
+        self.assertGreater(body["events_total"], 2)
+        self.assertEqual(body["events_limit"], 2)
+
+    def test_metrics_uses_precomputed_cache(self):
+        """R-19：指标预计算命中缓存（runner 判定后已落库）。"""
+        status, body = self._get_json(f"/api/attempts/{self.attempt_id}/metrics")
+        self.assertEqual(status, 200)
+        self.assertTrue(body["cached"])
+        self.assertIn("cost_cny", body["metrics"])
+        self.assertIn("loop_patterns", body["metrics"])
 
     def test_attempt_detail(self):
         status, body = self._get_json(f"/api/attempts/{self.attempt_id}")
