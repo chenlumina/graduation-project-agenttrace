@@ -52,6 +52,13 @@ class TraceStore:
 
     def __init__(self, path: str | Path):
         self._conn = sqlite3.connect(str(path))
+        # R-13：WAL + NORMAL——单条事件提交的磁盘同步开销显著降低，
+        # 崩溃一致性由 WAL 保证（论文中可如实说明该权衡）
+        try:
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+        except sqlite3.DatabaseError:
+            pass  # 只读介质等场景保持默认
         self._conn.executescript(_SCHEMA)
         self._ensure_unique_seq_index()
         self._conn.commit()
@@ -95,23 +102,73 @@ class TraceStore:
         return meta.attempt_id
 
     def append_event(self, ev: TraceEvent) -> None:
+        """写入单条事件。
+
+        R-12：seq <= 0 表示"由存储层分配"——取号（MAX(seq)+1）与插入在同一
+        隐式事务内完成，失败即回滚，不再出现"先自增后落库"的序号空洞。
+        seq > 0 仍按调用方给定的值写入（兼容测试与历史导入），唯一约束兜底。
+        """
+        if ev.seq <= 0:
+            ev.seq = int(self._conn.execute(
+                "SELECT COALESCE(MAX(seq), 0) + 1 FROM events WHERE attempt_id = ?",
+                (ev.attempt_id,),
+            ).fetchone()[0])
+            ev.validate()
+            try:
+                self._insert(ev)
+            except sqlite3.IntegrityError as e:  # 并发取号碰撞：整体回滚，不落半条
+                self._conn.rollback()
+                raise TraceValidationError(f"事件序号分配冲突，已回滚: {e}") from e
+            self._conn.commit()
+            return
+
         ev.validate()
         try:
-            self._conn.execute(
-                "INSERT INTO events VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    ev.id,
-                    ev.attempt_id,
-                    ev.seq,
-                    ev.ts,
-                    ev.type,
-                    ev.parent_id,
-                    json.dumps(ev.data, ensure_ascii=False),
-                ),
-            )
+            self._insert(ev)
         except sqlite3.IntegrityError as e:
             raise TraceValidationError(f"事件写入失败（id 或 (attempt_id, seq) 重复）: {e}") from e
         self._conn.commit()
+
+    def append_events(self, events: list[TraceEvent]) -> None:
+        """R-13：批量写入——一次事务提交多条事件（长任务/导入场景显著减少磁盘同步）。
+
+        seq<=0 的事件在同一事务内按 attempt 依次递增分配（以当前 MAX(seq) 为基准），
+        显式给定 seq 的事件同步抬高该 attempt 的分配水位。
+        """
+        next_seq: dict[str, int] = {}
+        for ev in events:
+            if ev.seq <= 0:
+                if ev.attempt_id not in next_seq:
+                    next_seq[ev.attempt_id] = int(self._conn.execute(
+                        "SELECT COALESCE(MAX(seq), 0) FROM events WHERE attempt_id = ?",
+                        (ev.attempt_id,),
+                    ).fetchone()[0])
+                next_seq[ev.attempt_id] += 1
+                ev.seq = next_seq[ev.attempt_id]
+            else:
+                next_seq[ev.attempt_id] = max(next_seq.get(ev.attempt_id, 0), ev.seq)
+            ev.validate()
+        try:
+            for ev in events:
+                self._insert(ev)
+        except sqlite3.IntegrityError as e:
+            self._conn.rollback()
+            raise TraceValidationError(f"事件批量写入失败，已整体回滚: {e}") from e
+        self._conn.commit()
+
+    def _insert(self, ev: TraceEvent) -> None:
+        self._conn.execute(
+            "INSERT INTO events VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                ev.id,
+                ev.attempt_id,
+                ev.seq,
+                ev.ts,
+                ev.type,
+                ev.parent_id,
+                json.dumps(ev.data, ensure_ascii=False),
+            ),
+        )
 
     def finish_attempt(self, attempt_id: str, status: str, finished_at: Optional[str] = None) -> None:
         cur = self._conn.execute(

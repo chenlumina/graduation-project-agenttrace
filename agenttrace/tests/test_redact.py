@@ -31,7 +31,7 @@ class TestRedact(unittest.TestCase):
 
     def test_export_redact_option(self):
         """R-22：export(redact=True) 遮蔽事件中的敏感信息；默认保真。"""
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             store = TraceStore(Path(td) / "t.db")
             store.begin_attempt(AttemptMeta(attempt_id="a1", task_id="t", agent="a", model="m"))
             c = TraceCollector(store, "a1")
@@ -46,7 +46,7 @@ class TestRedact(unittest.TestCase):
 
     def test_collector_redact_env_hook(self):
         """R-22：AGENTTRACE_REDACT=1 时采集侧落库前脱敏。"""
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             store = TraceStore(Path(td) / "t.db")
             store.begin_attempt(AttemptMeta(attempt_id="a2", task_id="t", agent="a", model="m"))
             os.environ["AGENTTRACE_REDACT"] = "1"
@@ -61,7 +61,7 @@ class TestRedact(unittest.TestCase):
 
     def test_purge_by_retention(self):
         """R-22：按保留期清理历史尝试与事件。"""
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             store = TraceStore(Path(td) / "t.db")
             store.begin_attempt(AttemptMeta(attempt_id="old", task_id="t", agent="a", model="m",
                                             started_at="2020-01-01T00:00:00.000+00:00"))

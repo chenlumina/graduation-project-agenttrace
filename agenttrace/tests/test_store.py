@@ -12,7 +12,7 @@ from agenttrace.store import TraceStore
 
 class TestTraceStore(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.store = TraceStore(Path(self.tmp.name) / "traces.db")
         meta = AttemptMeta(attempt_id="a1", task_id="t1", agent="mini-agent", model="scripted-mini")
         self.store.begin_attempt(meta)
@@ -53,6 +53,37 @@ class TestTraceStore(unittest.TestCase):
     def test_finish_missing_raises(self):
         with self.assertRaises(KeyError):
             self.store.finish_attempt("nope", "passed")
+
+    def test_seq_allocated_by_store(self):
+        """R-12：seq<=0 时由存储层事务内分配（1,2,3…），并回填到事件对象。"""
+        from agenttrace.model import TraceEvent, new_id, now_iso
+        evs = [
+            TraceEvent(id=new_id(), attempt_id="a1", seq=0, ts=now_iso(),
+                       type="error", parent_id=None, data={"message": f"m{i}"})
+            for i in range(3)
+        ]
+        for ev in evs:
+            self.store.append_event(ev)
+        self.assertEqual([e.seq for e in evs], [1, 2, 3])
+        self.assertEqual([e.seq for e in self.store.events("a1")], [1, 2, 3])
+
+    def test_batch_append_single_transaction(self):
+        """R-13：批量写入按序分配连续 seq，一次事务落库。"""
+        from agenttrace.model import TraceEvent, new_id, now_iso
+        batch = [
+            TraceEvent(id=new_id(), attempt_id="a1", seq=0, ts=now_iso(),
+                       type="error", parent_id=None, data={"message": f"b{i}"})
+            for i in range(5)
+        ]
+        self.store.append_events(batch)
+        got = self.store.events("a1")
+        self.assertEqual([e.seq for e in got], [1, 2, 3, 4, 5])
+        self.assertEqual(self.store.count_events("a1"), 5)
+
+    def test_wal_mode_enabled(self):
+        """R-13：WAL 日志模式启用（写入同步开销降低）。"""
+        mode = self.store._conn.execute("PRAGMA journal_mode").fetchone()[0]
+        self.assertEqual(str(mode).lower(), "wal")
 
     def test_invalid_event_rejected(self):
         c = TraceCollector(self.store, "a1")

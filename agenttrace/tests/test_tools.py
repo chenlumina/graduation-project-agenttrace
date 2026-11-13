@@ -11,7 +11,7 @@ from agenttrace.tools import Workspace
 
 class TestWorkspace(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.ws = Workspace(self.tmp.name)
 
     def tearDown(self):

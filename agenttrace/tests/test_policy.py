@@ -71,7 +71,7 @@ class TestPolicyEngine(unittest.TestCase):
 
 class TestAuditedClient(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.store = TraceStore(Path(self.tmp.name) / "traces.db")
         self.attempt_id = new_id()
         self.store.begin_attempt(

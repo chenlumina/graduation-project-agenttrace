@@ -105,7 +105,7 @@ class TestLocalChannelPolicy(unittest.TestCase):
     """C-2：本地通道必须走策略评估，并留痕 policy_audit。"""
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.store = TraceStore(Path(self.tmp.name) / "traces.db")
 
     def tearDown(self):
@@ -180,7 +180,7 @@ class TestHiddenTestsIsolation(unittest.TestCase):
     """C-3：隐藏测试与工作区隔离，判定永远用原始隐藏测试。"""
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.store = TraceStore(Path(self.tmp.name) / "traces.db")
 
     def tearDown(self):
@@ -250,7 +250,7 @@ class TestVerdictIntegrity(unittest.TestCase):
     """判定权威性：被测代码不得伪造通过、不得读取隐藏测试内容。"""
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.store = TraceStore(Path(self.tmp.name) / "traces.db")
 
     def tearDown(self):
@@ -291,7 +291,7 @@ class TestVerdictIntegrity(unittest.TestCase):
 
     def test_patch_unittest_assertion_cannot_fake_pass(self):
         """被测包在 import 期改写 unittest 断言 → 判定必须失败。"""
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             task_dir = self._make_task(Path(td), "patch_assert")
             evil = (
                 "import unittest\n"
@@ -306,7 +306,7 @@ class TestVerdictIntegrity(unittest.TestCase):
 
     def test_patch_unittest_via_type_setattr_detected(self):
         """绕过审计钩子（type.__setattr__）的改写同样会被快照检出。"""
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             task_dir = self._make_task(Path(td), "patch_assert2")
             evil = (
                 "import unittest\n"
@@ -321,7 +321,7 @@ class TestVerdictIntegrity(unittest.TestCase):
 
     def test_os_exit_cannot_fake_pass(self):
         """被测模块顶层 os._exit(0) → 判定必须失败（fail-closed）。"""
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             task_dir = self._make_task(Path(td), "os_exit")
             evil = "import os\nos._exit(0)\n"
             res = self._run(task_dir, [
@@ -332,7 +332,7 @@ class TestVerdictIntegrity(unittest.TestCase):
 
     def test_cannot_read_hidden_test_source(self):
         """被测代码读不到隐藏测试文件（判定环境里根本没有它）。"""
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             task_dir = self._make_task(Path(td), "read_hidden")
             evil = (
                 "import pathlib\n"
@@ -352,7 +352,7 @@ class TestVerdictIntegrity(unittest.TestCase):
             self.assertNotIn("class T(unittest.TestCase)", outputs)
 
     def test_legitimate_fix_passes(self):
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             task_dir = self._make_task(Path(td), "legit")
             fixed = (
                 "def is_leap_year(year: int) -> bool:\n"
@@ -396,7 +396,7 @@ class TestVerdictShadowing(unittest.TestCase):
         return task_dir
 
     def _run(self, task_dir: Path, actions):
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             store = TraceStore(Path(td) / "traces.db")
             try:
                 task = TaskPackage.load(task_dir)
@@ -406,7 +406,7 @@ class TestVerdictShadowing(unittest.TestCase):
                 store.close()
 
     def test_stdlib_shadow_module_cannot_fake_pass(self):
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             task_dir = self._make_task(Path(td), "shadow_unittest")
             res = self._run(task_dir, [
                 # 遮蔽标准库 unittest：若生效，测试会被"假装通过"
@@ -417,7 +417,7 @@ class TestVerdictShadowing(unittest.TestCase):
             self.assertEqual(res.status, "failed")
 
     def test_stdlib_shadow_package_cannot_fake_pass(self):
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             task_dir = self._make_task(Path(td), "shadow_pkg")
             res = self._run(task_dir, [
                 {"tool": "write_file", "args": {"path": "unittest/__init__.py", "content": "import sys\nsys.exit(0)\n"}},
@@ -427,7 +427,7 @@ class TestVerdictShadowing(unittest.TestCase):
             self.assertFalse(res.passed)
 
     def test_sitecustomize_cannot_hijack(self):
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             task_dir = self._make_task(Path(td), "shadow_sitecustomize")
             res = self._run(task_dir, [
                 {"tool": "write_file", "args": {
@@ -439,7 +439,7 @@ class TestVerdictShadowing(unittest.TestCase):
             self.assertFalse(res.passed)
 
     def test_hidden_tests_as_plain_file_cannot_break_verdict(self):
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             task_dir = self._make_task(Path(td), "hidden_file")
             res = self._run(task_dir, [
                 {"tool": "write_file", "args": {"path": "hidden_tests", "content": "not a dir\n"}},
@@ -449,7 +449,7 @@ class TestVerdictShadowing(unittest.TestCase):
             self.assertEqual(res.status, "failed")
 
     def test_legitimate_fix_still_passes(self):
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             task_dir = self._make_task(Path(td), "legit_fix")
             res = self._run(task_dir, [
                 {"tool": "write_file", "args": {"path": "src/x.py", "content": "def fixed():\n    return 42\n"}},
@@ -459,7 +459,7 @@ class TestVerdictShadowing(unittest.TestCase):
 
     def test_zero_tests_is_not_a_pass(self):
         """即使退出码为 0，未收集到任何用例也不得判为通过。"""
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             task_dir = self._make_task(Path(td), "zero_tests")
             # 空的 hidden_tests 目录 → 发现不到用例
             for f in (task_dir / "hidden_tests").iterdir():
@@ -477,7 +477,7 @@ class TestEnvSanitization(unittest.TestCase):
         old = os.environ.get("AGENTTRACE_LLM_API_KEY")
         os.environ["AGENTTRACE_LLM_API_KEY"] = "sk-should-not-leak"
         try:
-            with tempfile.TemporaryDirectory() as td:
+            with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
                 ws = Workspace(td)
                 res = ws.run([
                     sys.executable, "-c",
@@ -517,7 +517,7 @@ class TestServerAuth(unittest.TestCase):
             from agenttrace.server import create_app
         except ImportError as e:  # pragma: no cover
             self.skipTest(f"需要 fastapi/httpx（{e}）")
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.db = Path(self.tmp.name) / "traces.db"
         self.client = TestClient(create_app(self.db, token="s3cr3t"))
         self.plain = TestClient(create_app(self.db))
@@ -574,7 +574,7 @@ class TestInjectionHandling(unittest.TestCase):
         self.assertIn("hello", out)
 
     def test_injection_flag_recorded_on_tool_call(self):
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             task_dir = Path(td) / "task"
             (task_dir / "setup" / "src").mkdir(parents=True)
             (task_dir / "hidden_tests").mkdir(parents=True)
@@ -602,7 +602,7 @@ class TestInjectionHandling(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with tempfile.TemporaryDirectory() as td2:
+            with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td2:
                 store = TraceStore(Path(td2) / "traces.db")
                 try:
                     task = TaskPackage.load(task_dir)

@@ -31,7 +31,7 @@ class TestTaskSet(unittest.TestCase):
             if not task.scripted_actions:
                 failures.append(f"{task.id}: 缺少 scripted_actions")
                 continue
-            with tempfile.TemporaryDirectory() as td:
+            with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
                 store = TraceStore(Path(td) / "traces.db")
                 try:
                     res = TaskRunner(store).run(task, ScriptedLLM(task.scripted_actions))

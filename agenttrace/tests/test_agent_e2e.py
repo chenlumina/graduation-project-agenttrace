@@ -34,7 +34,7 @@ GOOD_ACTIONS = [
 
 class TestEndToEnd(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.store = TraceStore(Path(self.tmp.name) / "traces.db")
         self.task = TaskPackage.load(TASK_DIR)
 
@@ -189,7 +189,7 @@ class AlwaysBadFormatLLM:
 
 class TestParseErrorRetry(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.store = TraceStore(Path(self.tmp.name) / "traces.db")
         self.task = TaskPackage.load(TASK_DIR)
 
@@ -280,7 +280,7 @@ class TestReadPagination(unittest.TestCase):
 
 class TestEmptyResponseRetry(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.store = TraceStore(Path(self.tmp.name) / "traces.db")
         self.task = TaskPackage.load(TASK_DIR)
 

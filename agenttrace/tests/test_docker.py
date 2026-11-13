@@ -39,7 +39,7 @@ class TestDockerExecutor(unittest.TestCase):
     """Docker 沙箱模式端到端：每个用例真实起容器执行。"""
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.store = TraceStore(Path(self.tmp.name) / "traces.db")
         self.task = TaskPackage.load(TASK_DIR)
 

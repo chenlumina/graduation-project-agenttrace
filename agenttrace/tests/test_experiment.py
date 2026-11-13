@@ -20,7 +20,7 @@ def scripted_factory(model, task):
 
 class TestExperiment(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         task_dirs = sorted(
             d for d in (ROOT / "tasks").iterdir()
             if d.is_dir() and (d / "task.json").exists()

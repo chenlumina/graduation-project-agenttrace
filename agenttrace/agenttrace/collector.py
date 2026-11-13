@@ -19,17 +19,15 @@ class TraceCollector:
     def __init__(self, store: TraceStore, attempt_id: str):
         self._store = store
         self.attempt_id = attempt_id
-        self._seq = 0
 
     def emit(self, type: str, data: dict[str, Any], parent_id: Optional[str] = None) -> TraceEvent:
         if _redact_enabled():  # R-22：采集侧脱敏钩子（默认关闭，保真优先）
             from .redact import redact_obj
             data = redact_obj(data)
-        self._seq += 1
         ev = TraceEvent(
             id=new_id(),
             attempt_id=self.attempt_id,
-            seq=self._seq,
+            seq=0,  # R-12：seq 由存储层在事务内分配并回填（不再先自增后落库）
             ts=now_iso(),
             type=type,
             parent_id=parent_id,

@@ -39,7 +39,7 @@ class TestMCPEndToEnd(unittest.TestCase):
     """真实 MCP 链路：stdio 子进程服务器 + 客户端会话 + 策略审计。"""
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.store = TraceStore(Path(self.tmp.name) / "traces.db")
         self.ws = Path(self.tmp.name) / "ws"
         shutil.copytree(TASK_DIR / "setup", self.ws, dirs_exist_ok=True)

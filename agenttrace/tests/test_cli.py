@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class TestCLI(unittest.TestCase):
     def test_run_task_and_export(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             db = Path(tmp) / "traces.db"
             env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": str(ROOT)}
             proc = subprocess.run(
@@ -50,7 +50,7 @@ class TestCLI(unittest.TestCase):
             self.assertGreaterEqual(len(doc["events"]), 10)
 
     def test_metrics_command(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             db = Path(tmp) / "traces.db"
             env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": str(ROOT)}
             atp = str(ROOT / "atp.py")

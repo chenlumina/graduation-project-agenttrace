@@ -33,7 +33,7 @@ class TestServerAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # 1) 准备数据库：真实跑一次示例任务
-        cls.tmp = tempfile.TemporaryDirectory()
+        cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         db = Path(cls.tmp.name) / "traces.db"
         store = TraceStore(db)
         task = TaskPackage.load(TASK_DIR)
@@ -48,7 +48,10 @@ class TestServerAPI(unittest.TestCase):
         cls.port = s.getsockname()[1]
         s.close()
 
-        config = uvicorn.Config(create_app(db), host="127.0.0.1", port=cls.port, log_level="error")
+        config = uvicorn.Config(
+            create_app(db, tasks_dir=ROOT / "tasks"),
+            host="127.0.0.1", port=cls.port, log_level="error",
+        )
         cls.server = uvicorn.Server(config)
         cls.thread = threading.Thread(target=cls.server.run, daemon=True)
         cls.thread.start()
@@ -150,6 +153,53 @@ class TestServerAPI(unittest.TestCase):
         csp = SECURITY_HEADERS["Content-Security-Policy"]
         self.assertIn("font-src 'self'", csp)
         self.assertNotIn("fonts.googleapis.com", csp)
+
+    def test_tasks_list(self):
+        """Web 提交：任务集列表含分级信息。"""
+        status, body = self._get_json("/api/tasks")
+        self.assertEqual(status, 200)
+        ids = {t["id"] for t in body["tasks"]}
+        self.assertIn("fix_leap_year", ids)
+        self.assertIn("fix_cart_total", ids)  # L2 任务
+        levels = {t["level"] for t in body["tasks"]}
+        self.assertIn("L2", levels)
+
+    def test_run_task_submission(self):
+        """Web 提交：POST /api/run 后台执行，执行完出现在尝试列表。"""
+        payload = json.dumps({"task_id": "fix_leap_year", "llm": "scripted"}).encode()
+        req = urllib.request.Request(
+            self.base + "/api/run", data=payload,
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            body = json.loads(r.read().decode("utf-8"))
+        self.assertEqual(body["status"], "started")
+        # 轮询等待后台执行完成（scripted 任务通常 1-3 秒）
+        deadline = time.time() + 30
+        found = False
+        while time.time() < deadline and not found:
+            time.sleep(0.3)
+            _, lst = self._get_json("/api/attempts?page_size=50")
+            found = any(
+                a["task_id"] == "fix_leap_year" and a["model"] == "scripted-mini"
+                for a in lst["attempts"]
+            )
+        self.assertTrue(found, "提交的任务未在列表中出现")
+
+    def test_run_task_rejects_bad_input(self):
+        """Web 提交：非法任务 id / 未开启的真实模型均被拒绝。"""
+        for payload, expect in (
+            ({"task_id": "../etc", "llm": "scripted"}, 404),
+            ({"task_id": "fix_leap_year", "llm": "openai"}, 403),
+            ({"task_id": "fix_leap_year", "llm": "nope"}, 400),
+        ):
+            req = urllib.request.Request(
+                self.base + "/api/run", data=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(req, timeout=10)
+            self.assertEqual(cm.exception.code, expect)
 
 
 if __name__ == "__main__":
