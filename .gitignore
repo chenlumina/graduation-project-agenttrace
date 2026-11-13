@@ -5,6 +5,9 @@
 # 课程与个人材料（不入公开仓库）
 毕设材料/
 
+# 设计原稿（本地保留副本，不入仓库）
+原型/
+
 # 文档构建脚手架
 docs-build/
 
@@ -23,3 +26,10 @@ AgentTrace_代码评审报告.docx
 
 # WorkBuddy 工作目录（本地记忆/日志）
 .workbuddy/
+
+# 宿主机/第三方杂项目录（不入库）
+NVIDIA Corporation/
+node_modules/
+*.db-journal
+*.db-wal
+*.db-shm
