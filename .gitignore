@@ -2,6 +2,10 @@
 .zwork/
 .mimocode/
 
+# 过程性文档（本地保留，不入仓库）
+FIXLOG.md
+IDEA.md
+
 # 课程与个人材料（不入公开仓库）
 毕设材料/
 

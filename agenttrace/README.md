@@ -204,7 +204,7 @@ agenttrace/
 | 回放服务暴露面 | 轨迹 API 可用 `--token` 鉴权；非回环地址未给令牌时拒绝启动；响应附 CSP 等安全头；`attempt_id` 必须匹配 32 位十六进制 | `server.py`、`__main__.py` |
 
 事件类型新增 `policy_audit`（授权决策，通道无关），`mcp_audit` 只保留 MCP 协议层的声明事件；
-`schema_version` 相应升为 **v3**。扫描报告与未完成项见 `../SECURITY_AUDIT.md`。
+`schema_version` 相应升为 **v4**。扫描报告与未完成项见 `../SECURITY_AUDIT.md`。
 
 > 已知边界（如实记录）：① 宿主本地模式仍是真实用户权限执行，仅靠策略与默认拒绝兜底，
 > 正式实验应使用 `--docker`；② Windows 下子进程超时只能回收直接子进程（POSIX 已按进程组回收）；
