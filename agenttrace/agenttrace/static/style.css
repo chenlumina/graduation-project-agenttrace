@@ -38,6 +38,15 @@ header .btn{
   padding:6px 14px;cursor:pointer;transition:letter-spacing .3s,background .3s;
 }
 header .btn:hover{letter-spacing:.12em;background:var(--accent-deep);border-color:var(--accent-deep)}
+/* R-21 补充：Web 端任务提交栏 */
+.run-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 22px;border-bottom:1px solid var(--line);background:var(--paper-deep);font-family:var(--font-body);font-size:12px}
+.run-bar select,.run-bar input{font-family:var(--font-mono);font-size:11px;padding:5px 8px;background:var(--paper);border:1px solid var(--line);color:var(--ink);min-width:120px}
+.run-bar select:focus,.run-bar input:focus{outline:1px solid var(--accent)}
+.run-bar .run-docker{display:flex;align-items:center;gap:5px;color:var(--ink-soft);white-space:nowrap}
+.run-bar .btn{font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;padding:6px 12px;background:var(--ink);color:var(--paper);border:1px solid var(--ink);cursor:pointer}
+.run-bar .btn.primary{background:var(--accent);border-color:var(--accent)}
+.run-bar .btn:disabled{opacity:.45;cursor:not-allowed}
+.run-bar .hint{font-family:var(--font-mono);font-size:10px;color:var(--ink-soft)}
 
 /* 三区 */
 main{display:grid;grid-template-columns:256px minmax(0,1fr) 396px;min-height:calc(100vh - 61px)}

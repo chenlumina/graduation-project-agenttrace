@@ -453,8 +453,71 @@ function togglePlay() {
   state.timer = setInterval(tick, Number($("speed").value));
 }
 
+/* ---------- 任务提交（Web 端，开题 P0 补齐） ---------- */
+
+async function loadTasks() {
+  try {
+    const data = await api("/api/tasks");
+    const sel = $("run-task");
+    const tasks = data.tasks || [];
+    if (!tasks.length) {
+      sel.innerHTML = '<option value="">无可用任务（服务未配置 --tasks）</option>';
+      return;
+    }
+    sel.innerHTML = tasks
+      .map((t) => `<option value="${esc(t.id)}">${esc(t.id)} · ${esc(t.level)}</option>`)
+      .join("");
+  } catch (e) {
+    $("run-task").innerHTML = `<option value="">任务加载失败：${esc(e.message)}</option>`;
+  }
+}
+
+async function submitTask() {
+  const taskId = $("run-task").value;
+  const status = $("run-status");
+  if (!taskId) {
+    status.textContent = "请先选择任务";
+    return;
+  }
+  const payload = {
+    task_id: taskId,
+    llm: $("run-llm").value,
+    model: $("run-model").value.trim() || null,
+    docker: $("run-docker").checked,
+  };
+  const btn = $("btn-run");
+  btn.disabled = true;
+  status.textContent = "提交中…";
+  try {
+    const res = await fetch("/api/run", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(TOKEN ? { "X-AgentTrace-Token": TOKEN } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      throw new Error(detail.detail || `HTTP ${res.status}`);
+    }
+    status.textContent = "已提交，后台执行中（约数秒后出现在左侧列表）";
+    setTimeout(loadAttempts, 1500);
+    setTimeout(loadAttempts, 4000);
+  } catch (e) {
+    status.textContent = `提交失败：${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function wire() {
   $("btn-refresh").addEventListener("click", loadAttempts);
+  $("btn-run-toggle").addEventListener("click", () => {
+    $("run-bar").classList.toggle("hidden");
+    if (!$("run-bar").classList.contains("hidden")) loadTasks();
+  });
+  $("btn-run").addEventListener("click", submitTask);
   $("btn-play").addEventListener("click", togglePlay);
   $("btn-next").addEventListener("click", () => {
     stopPlay();
@@ -495,3 +558,4 @@ function wire() {
 
 wire();
 loadAttempts();
+loadTasks();

@@ -77,10 +77,20 @@
 - 任务集回归测试（tests/test_taskset.py）：每个任务用其脚本参照解离线跑通才算过，保证缺陷/测试/参照解三要素始终一致
 - 每任务 3~5 个隐藏测试用例（含边界），全部仅依赖标准库，与沙箱镜像 python:3.13-slim 兼容
 
-**未做（后续里程碑，按开题排期）**
+**已完成（M11：评审问题修复 + 本体完善）**
 
-- 批量实验入口已交付（experiment 命令 + Markdown 对比报告，已实测）；可选后续：Web 端对比视图
-- 统计图增强（当前为原生 CSS 构成条，后续可选接入 ECharts）
+- 数据与可靠性：seq 唯一约束 + 存储层事务内分配（无空洞）、llm_call 增量记录（schema v4，消除平方级存储放大）、WAL + 批量写入
+- 观测深度：全事件统一 duration_ms（耗时占比/TopN）、采样参数与版本快照、n-gram 循环检测 + 无进展检测 + 重复率拆分、上下文增长与截断率、成本金额与通过率—成本帕累托分析
+- 归因与重试：全链路结构化 error_code（归因 v2 终止性错误优先）、解析失败与空回复统一重试策略
+- 任务集：L1/L2 分级（16 任务，5 个 L2 覆盖多文件联动/需读调用方/误导注释），实验 pass@1/pass^k/均值±标准差
+- 实验工程：故障注入（慢工具/随机失败/提示注入样本）、断点续跑、单任务异常容错
+- 服务与安全：接口分页/轨迹分段/指标预计算、Web 端任务提交（POST /api/run，默认仅 scripted）、轨迹脱敏与保留期清理、字体自托管（零外链，CSP 收紧）
+
+**未做（后续，按开题排期）**
+
+- Web 端多模型对比视图（实验报告已具备数据，视图可选）
+- ECharts 统计图增强（当前为原生 CSS 构成条）
+- OTel GenAI 语义映射表（文档层）、轻量对照实验（R-06）
 
 ## 快速开始
 
@@ -96,7 +106,8 @@ python atp.py run-task tasks/fix_leap_year --db traces.db
 python atp.py export <attempt_id> --db traces.db --out trace.json
 
 # 启动 Web 回放界面（需先 pip install fastapi uvicorn）
-python atp.py serve --db traces.db   # 浏览器打开 http://127.0.0.1:8000
+python atp.py serve --db traces.db   # 浏览器打开 http://127.0.0.1:8000（含 Web 端任务提交）
+python atp.py serve --db traces.db --allow-llm-run   # 允许 Web 端用真实模型提交任务
 python atp.py serve --db traces.db --token <令牌>   # 开启访问鉴权：/?token=<令牌>
 
 # 运行示例任务（MCP 协议 + 权限审计）
@@ -110,6 +121,15 @@ python atp.py run-task tasks/fix_leap_year --db traces.db --docker
 
 # 本地（宿主机）模式下默认禁止 Agent 执行 run_command；确需放行时显式开启
 python atp.py run-task tasks/fix_leap_year --db traces.db --allow-local-commands
+
+# 批量实验（多模型 × 重复 3 次 + 故障注入场景 + 断点续跑）
+python atp.py experiment --models a,b,c --repeat 3 --docker
+python atp.py experiment --models a --repeat 3 --fault slow_tool
+python atp.py experiment --models a,b,c --repeat 3 --db experiments/exp-xxx.db --resume
+
+# 轨迹导出（默认脱敏）与保留期清理
+python atp.py export <attempt_id> --db traces.db --out trace.json
+python atp.py purge --db traces.db --days 30
 
 # 运行全部测试
 python -m unittest discover -s tests -v
@@ -139,6 +159,9 @@ agenttrace/
 │   ├── model.py           # 统一轨迹数据模型（事件类型与校验）
 │   ├── store.py           # SQLite 轨迹存储与导出
 │   ├── collector.py       # 事件采集器（seq/时间戳/父子关系）
+│   ├── faults.py          # 故障注入（慢工具/随机失败/注入样本）
+│   ├── pricing.py         # 模型价目表与成本折算
+│   ├── redact.py          # 轨迹脱敏（密钥/令牌/邮箱遮蔽）
 │   ├── tools.py           # 受限工作区（路径越界防护、unified diff）
 │   ├── llm.py             # LLM 接入层（ScriptedLLM / OpenAICompatLLM）
 │   ├── agent.py           # mini Agent（ReAct 循环，默认被测对象）
@@ -164,7 +187,7 @@ agenttrace/
 - **一切皆事件**：模型调用、工具动作、文件 diff、命令执行、最终判定全部落轨迹，供回放与后续过程指标分析。
 - **被测 Agent 可插拔**：MiniAgent 只依赖统一的 llm.chat(messages) 接口；接入开源 Agent 时实现同一接口即可，平台不绑定任何具体框架。
 
-## 安全模型（schema v3）
+## 安全模型（schema v4）
 
 平台会执行**不可信的模型输出**，因此安全边界不靠"模型听话"，而靠执行器强制：
 

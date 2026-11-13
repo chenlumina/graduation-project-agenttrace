@@ -18,6 +18,15 @@
 | R-08 | llm_call 全量落库，存储平方级膨胀 | 严重 | ✅ 已完成 | 2026-11-11 | 全量 126 项通过 |
 | R-03 | 任务集天花板效应 | 阻断 | ✅ 已完成 | 2026-11-11 | taskset 参照解回归全过 |
 | R-16 | 循环检测口径过窄 | 一般 | ✅ 已完成 | 2026-11-13 | n-gram+无进展+重复率拆分 |
+| R-18 | 缺少上下文/截断指标 | 建议 | ✅ 已完成 | 2026-11-13 | read_file 分页 + 指标 |
+| R-19 | 接口无分页无缓存 | 一般 | ✅ 已完成 | 2026-11-13 | 分页/分段/指标预计算 |
+| R-20 | 实验容错与续跑 | 一般 | ✅ 已完成 | 2026-11-13 | 续跑+单任务容错 |
+| R-21 | 注入检测定位表述 | 一般 | ✅ 已完成 | 2026-11-13 | 文档口径修正 |
+| R-22 | 轨迹无脱敏/无保留策略 | 一般 | ✅ 已完成 | 2026-11-13 | 脱敏+purge |
+| R-23 | 字体外链与离线承诺冲突 | 建议 | ✅ 已完成 | 2026-11-13 | 自托管字体+CSP |
+| R-12 | 序号内存分配 | 一般 | ✅ 已完成 | 2026-11-13 | 存储层事务内分配 |
+| R-13 | 逐事件单独提交 | 一般 | ✅ 已完成 | 2026-11-13 | WAL+批量写入 |
+| P0-gap | Web 端无任务提交入口 | — | ✅ 已完成 | 2026-11-13 | /api/run + 前端提交栏 |
 | R-17 | 缺少成本金额指标 | 一般 | ✅ 已完成 | 2026-11-13 | 价目表+通过率—成本帕累托分析 |
 | R-04 | 实验统计口径不足 | 严重 | ✅ 已完成 | 2026-11-11 | 全量 127 项通过 |
 | R-05 | 缺少故障注入实验 | 严重 | ✅ 已完成 | 2026-11-11 | 全量 133 项通过 |
@@ -187,3 +196,66 @@
 - **影响**：前端回放树由 parent_id 驱动，改动后文件变更自动缩进在对应工具调用下，无需前端改动。
 - **验证**：全量 118 项通过（含新增回归）。
 - **commit**：`fix(R-10)`。
+
+
+---
+
+# 第二批修复（2026-11-13，本体完善收尾）
+
+## R-18　上下文增长/截断指标 + read_file 分页
+
+- `agent.py`：read_file 支持 offset/limit（默认 0/2000，上限 8000），事件记录 offset/limit/original_length/truncated，截断时向模型提示续读参数；SYSTEM_PROMPT 说明分页用法。
+- `collector` / `agent`：llm_call 记录 context_chars（本轮完整 prompt 字符数）。
+- `metrics`：context_chars_per_turn / max_context_chars / context_growth_chars / truncated_tool_calls / truncated_tool_rate。
+- 测试：分页三态（默认截断/续读仍截断/读完不截断）+ 上下文指标口径。
+- commit：`fix(R-18)`。
+
+## R-19　接口分页与指标预计算
+
+- `store`：list_attempts(limit/offset/task_id)、count_attempts、count_events、update_attempt_meta；export 不下发 _ 前缀派生字段。
+- `runner`：判定完成后预计算 _metrics/_classification 落库。
+- `server`：/api/attempts 分页（page/page_size/task_id）+ 元数据；/api/attempts/{id} 支持 events_offset/events_limit 分段；/metrics 优先读缓存，缺失回写。
+- 前端：列表请求分页参数并显示"最近 N / 共 M"。
+- 测试：分页参数、轨迹分段、缓存命中、派生字段不下发。
+- commit：`feat(R-19)`。
+
+## R-20　实验容错与断点续跑
+
+- `experiments`：resume=True 时沿用既有 run_id、跳过已完成 (model,task,repeat)、历史行回填报告；单任务异常捕获记为失败行（error 字段），不中断整批；返回 skipped / errored。
+- CLI：`experiment --resume`（已存在库需显式开启）。
+- 测试：续跑跳过与 run_id 沿用；注入异常任务不影响其余任务。
+- commit：`feat(R-20)`。
+
+## R-22 / R-21　轨迹脱敏与注入检测定位
+
+- 新模块 `redact.py`：API Key / Bearer / 键值密钥字段 / PEM 私钥 / 邮箱遮蔽（幂等）。
+- `store.export(redact=True)`；CLI export 默认脱敏（--no-redact 关闭）；`AGENTTRACE_REDACT=1` 采集侧钩子；`purge --days N` 保留期清理。
+- R-21：README、agent.py 注释明确注入检测是"风险留痕与可观测性，非防御机制"。
+- 测试：4 项（模式/导出/采集钩子/保留期清理）。
+- commit：`feat(R-22,R-21)`。
+
+## R-23　字体自托管与 CSP 收紧
+
+- 下载 Google Fonts latin 子集 8 个 woff2（122KB）到 static/fonts/，生成本地 fonts.css；中文回退系统字体栈；index.html 移除全部外链；CSP 收紧为 font-src 'self'。
+- 测试：页面无 googleapis 外链、fonts.css 可访问、CSP 不含外部字体域。
+- commit：`feat(R-23)`。
+
+## R-12 / R-13　序号下沉与批量事务
+
+- `store`：WAL + synchronous=NORMAL；seq<=0 时由存储层在事务内分配（取号与插入同事务，失败回滚不留空洞）；新增 append_events 批量单事务写入。
+- `collector`：不再维护内存计数器，emit 交由存储层分配回填。
+- 测试：存储层分配 1/2/3、批量连续分配、WAL 生效。
+- commit：`feat(R-12,R-13)`。
+
+## Web 端任务提交入口（开题 P0 形式缺口）
+
+- `server`：GET /api/tasks（任务集+分级）、POST /api/run（后台线程执行，独立 sqlite 连接）；scripted 默认开放，openai/docker 需 `--allow-llm-run` / `--allow-docker-run`；task_id 白名单防目录穿越。
+- CLI serve：--tasks / --allow-llm-run / --allow-docker-run。
+- 前端：header "提交任务"按钮 + 提交栏（任务/LLM/模型/Docker），提交后自动刷新列表。
+- 测试：任务列表、提交后台执行并出现在列表、非法输入拒绝（404/403/400）。
+- commit：`feat(web-run)`。
+
+## 第二批验证
+
+- 全量测试：152 项（含新增），修复 7 项 test_security 的 TestClient 依赖（httpx2）。
+- 修复复核：f-string 嵌套引号兼容、批量 seq 分配 bug、RunRequest 函数内定义导致 422 等 3 个问题在提交前被发现并修正。

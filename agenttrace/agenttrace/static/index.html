@@ -19,8 +19,20 @@
     <span class="sub">Replay Workbench</span>
   </div>
   <div class="spacer"></div>
+  <button id="btn-run-toggle" class="btn">提交任务</button>
   <button id="btn-refresh" class="btn">刷新列表</button>
 </header>
+<div id="run-bar" class="run-bar hidden">
+  <select id="run-task"><option value="">加载任务…</option></select>
+  <select id="run-llm">
+    <option value="scripted">脚本 LLM（离线）</option>
+    <option value="openai">真实模型</option>
+  </select>
+  <input id="run-model" placeholder="模型名（可选，默认 .env）" />
+  <label class="run-docker"><input type="checkbox" id="run-docker" /> Docker 沙箱</label>
+  <button id="btn-run" class="btn primary">开始评测</button>
+  <span id="run-status" class="hint"></span>
+</div>
 <main>
   <aside id="attempt-list">
     <div class="rail-cap">Attempts</div>

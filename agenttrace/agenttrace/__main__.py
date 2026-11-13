@@ -69,6 +69,18 @@ def main(argv: list[str] | None = None) -> int:
     p_srv.add_argument("--host", default="127.0.0.1")
     p_srv.add_argument("--port", type=int, default=8000)
     p_srv.add_argument(
+        "--tasks", default="tasks",
+        help="任务集目录（Web 端提交任务用；目录不存在则只提供回放）",
+    )
+    p_srv.add_argument(
+        "--allow-llm-run", action="store_true",
+        help="允许 Web 端用真实模型（.env 配置）提交任务，默认关闭",
+    )
+    p_srv.add_argument(
+        "--allow-docker-run", action="store_true",
+        help="允许 Web 端以 Docker 沙箱提交任务，默认关闭",
+    )
+    p_srv.add_argument(
         "--token",
         default=None,
         help="回放服务访问令牌（默认取环境变量 AGENTTRACE_API_TOKEN）；非回环地址必须提供",
@@ -171,7 +183,13 @@ def main(argv: list[str] | None = None) -> int:
                 "（令牌以查询参数传入，前端会转成 X-AgentTrace-Token 头）",
                 file=sys.stderr,
             )
-        uvicorn.run(create_app(args.db, token=token), host=args.host, port=args.port, log_level="warning")
+        uvicorn.run(
+            create_app(
+                args.db, token=token, tasks_dir=args.tasks,
+                allow_llm_run=args.allow_llm_run, allow_docker_run=args.allow_docker_run,
+            ),
+            host=args.host, port=args.port, log_level="warning",
+        )
         return 0
 
     if args.cmd == "metrics":
