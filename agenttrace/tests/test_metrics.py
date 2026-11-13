@@ -125,6 +125,84 @@ class TestMetrics(unittest.TestCase):
         self.assertEqual(cl["primary"], "passed")
         self.assertIn("workspace_escape", cl["labels"])
 
+    def test_ngram_loop_detection(self):
+        """R-16：ABAB 交替循环可被识别（旧口径漏检），AAA 同键连发仍命中。"""
+        def script_abab(c):
+            for _ in range(3):
+                c.tool_call("read_file", {"path": "a"}, "x", "ok")
+                c.tool_call("read_file", {"path": "b"}, "y", "ok")
+        evs = self.store.events(self.collect(script_abab))
+        m = compute_metrics(evs)
+        self.assertTrue(m["loop_detected"])
+        self.assertEqual(m["loop_patterns"][0]["period"], 2)
+        self.assertEqual(m["loop_patterns"][0]["repeats"], 3)
+
+        def script_aaa(c):
+            for _ in range(3):
+                c.tool_call("read_file", {"path": "a"}, "x", "ok")
+        evs2 = self.store.events(self.collect(script_aaa))
+        m2 = compute_metrics(evs2)
+        self.assertTrue(m2["loop_detected"])
+        self.assertEqual(m2["loop_patterns"][0]["period"], 1)
+
+        def script_ab(c):
+            c.tool_call("read_file", {"path": "a"}, "x", "ok")
+            c.tool_call("read_file", {"path": "b"}, "y", "ok")
+        evs3 = self.store.events(self.collect(script_ab))
+        self.assertFalse(compute_metrics(evs3)["loop_detected"])
+
+    def test_no_progress_detection(self):
+        """R-16：连续 ≥4 次工具调用无新 file_diff 且未通过 → 无进展告警。"""
+        def script(c):
+            for _ in range(5):
+                c.tool_call("read_file", {"path": "a"}, "x", "ok")
+            c.run_result(False, "FAIL")
+        evs = self.store.events(self.collect(script))
+        m = compute_metrics(evs)
+        self.assertEqual(m["max_no_progress_streak"], 5)
+        self.assertTrue(m["no_progress_detected"])
+
+        def script_pass(c):
+            for _ in range(5):
+                c.tool_call("read_file", {"path": "a"}, "x", "ok")
+            c.run_result(True, "OK")
+        evs2 = self.store.events(self.collect(script_pass))
+        self.assertFalse(compute_metrics(evs2)["no_progress_detected"])  # 通过不算无进展
+
+    def test_reread_after_write_not_counted(self):
+        """R-16：写后重读同一文件属合理行为，从无效重复率中剔除。"""
+        def script(c):
+            c.tool_call("write_file", {"path": "a.py", "content": "x"}, "d", "ok")
+            c.file_diff("a.py", "+x")
+            c.tool_call("read_file", {"path": "a.py"}, "x", "ok")  # 写后重读（合理）
+            c.tool_call("read_file", {"path": "a.py"}, "x", "ok")  # 再次重读（重复）
+            c.run_result(True, "OK")
+        evs = self.store.events(self.collect(script))
+        m = compute_metrics(evs)
+        self.assertEqual(m["reread_after_write_count"], 2)
+        # 重复键 2 个（两次重读），全部属于写后重读 → 有效重复率 0
+        self.assertEqual(m["effective_duplicate_tool_rate"], 0.0)
+
+    def test_cost_calculation(self):
+        """R-17：成本金额折算；无价目模型不猜测、如实标注未计价。"""
+        prices = {"m": {"input": 2.0, "output": 8.0}}  # 每百万 token 2/8 元
+
+        def script(c):
+            c.llm_call(model="m", messages=[], response="r",
+                       usage={"prompt_tokens": 1_000_000, "completion_tokens": 500_000})
+            c.llm_call(model="unknown-model", messages=[], response="r",
+                       usage={"prompt_tokens": 100, "completion_tokens": 50})
+        evs = self.store.events(self.collect(script))
+        m = compute_metrics(evs, prices=prices)
+        # 1M×2 + 0.5M×8 = 2 + 4 = 6 元
+        self.assertAlmostEqual(m["cost_cny"], 6.0, places=4)
+        self.assertFalse(m["cost_fully_priced"])
+        self.assertEqual(m["unpriced_tokens"], 150)
+
+        from agenttrace.pricing import compute_cost
+        self.assertIsNone(compute_cost("nope", 100, 100, prices))
+        self.assertAlmostEqual(compute_cost("m", 0, 1_000_000, prices), 8.0, places=4)
+
     def test_clean_pass(self):
         def script(c):
             e1 = c.llm_call(model="m", messages=[], response="r",

@@ -105,6 +105,10 @@ class TestExperiment(unittest.TestCase):
         self.assertIn("pass@1", md)
         self.assertIn("pass^k", md)
         self.assertIn("mean±std", md)
+        # R-17：成本分析段落与未计价标注
+        self.assertIn("通过率—成本分析", md)
+        self.assertIn("帕累托", md)
+        self.assertFalse(summary["aggregates"]["half-fail"]["cost_fully_priced"])
 
     def test_refuses_existing_db(self):
         db = Path(self.tmp.name) / "existing.db"

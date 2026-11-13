@@ -22,6 +22,7 @@ from statistics import stdev as _stdev
 from typing import Any, Callable
 
 from .llm import OpenAICompatLLM
+from .pricing import compute_cost
 from .runner import TaskPackage, TaskRunner
 from .store import TraceStore
 
@@ -105,15 +106,15 @@ def build_summary_md(
         f"- 模型：{', '.join(models)}",
         f"- 任务数：{len(task_ids)}",
         f"- 执行模式：{mode}",
-        f"- 成本口径：tokens（单价按各平台价目折算）",
+        f"- 成本口径（R-17）：tokens × 单价（pricing.py 价目表，AGENTTRACE_PRICE_FILE 可覆盖；无价目模型如实标注未计价）",
         f"- 统计口径（R-04）：pass@1 = 通过次数/尝试次数（能力上限）；"
         f"pass^k = 同组合多次全部通过的任务比例（稳定性）；"
         f"tokens/耗时为 mean±std（n≥2 时样本标准差）",
         "",
         "## 模型汇总",
         "",
-        "| 模型 | 尝试数 | 通过 | pass@1 | 任务 pass^k | 总 tokens | 平均 tokens | token std | 平均耗时(s) | 耗时 std |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| 模型 | 尝试数 | 通过 | pass@1 | 任务 pass^k | 总 tokens | 平均 tokens | token std | 平均耗时(s) | 耗时 std | 总成本(¥) |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for m in models:
         a = aggregates[m]
@@ -125,9 +126,41 @@ def build_summary_md(
         tok_std = a["token_std"] if a["token_std"] is not None else "-"
         dur_std = a["duration_std"] if a["duration_std"] is not None else "-"
         avg_dur = a["avg_duration_s"] if a["avg_duration_s"] is not None else "-"
+        cost_txt = f"{a['total_cost_cny']:.4f}" + ("" if a["cost_fully_priced"] else "*")
         lines.append(
             f"| {m} | {a['attempts']} | {a['passed']} | {rate} | {passk} | {a['total_tokens']} "
-            f"| {a['avg_tokens']} | {tok_std} | {avg_dur} | {dur_std} |"
+            f"| {a['avg_tokens']} | {tok_std} | {avg_dur} | {dur_std} | {cost_txt} |"
+        )
+    lines.append("")
+    lines.append("*\\* 含未计价模型（价目表无此模型），成本为部分折算。*")
+
+    # R-17：通过率—成本联合分析（"效果更好但成本更高"的权衡呈现）
+    lines += [
+        "",
+        "## 通过率—成本分析",
+        "",
+        "| 模型 | pass@1 | 任务 pass^k | 总成本(¥) | 单次通过成本(¥) | 性价比 |",
+        "|---|---|---|---|---|---|",
+    ]
+    # 帕累托前沿：pass@1 不更低且成本不更高即占优
+    for m in models:
+        a = aggregates[m]
+        cost = a["total_cost_cny"]
+        per_pass = cost / a["passed"] if a["passed"] else None
+        dominated = any(
+            other != m
+            and aggregates[other]["pass_at_1"] >= a["pass_at_1"]
+            and aggregates[other]["total_cost_cny"] <= cost
+            and (
+                aggregates[other]["pass_at_1"] > a["pass_at_1"]
+                or aggregates[other]["total_cost_cny"] < cost
+            )
+            for other in models
+        )
+        tag = "被占优" if dominated else "帕累托最优"
+        lines.append(
+            f"| {m} | {a['pass_at_1'] * 100:.1f}% | {a['task_pass_at_k'] * 100:.1f}% "
+            f"| {cost:.4f} | {f'{per_pass:.4f}' if per_pass is not None else '-'} | {tag} |"
         )
     lines += ["", "## 任务 × 模型", "", "| 任务 | " + " | ".join(models) + " |",
               "|---|" * 1 + "---|" * len(models)]
@@ -204,6 +237,7 @@ def run_experiment(
                         "prompt_tokens": p,
                         "completion_tokens": c,
                         "total_tokens": p + c,
+                        "cost_cny": compute_cost(model, p, c),  # R-17：无价目模型为 None
                         "duration_s": _duration_s(store, res.attempt_id),
                     })
                     if sleep_s > 0 and done < total:
@@ -236,6 +270,11 @@ def run_experiment(
             "token_std": _std(toks),
             "avg_duration_s": round(_mean(durs), 2) if durs else None,
             "duration_std": _std([float(d) for d in durs]) if durs else None,
+            # R-17：成本金额（存在无价目尝试时标注未完全计价）
+            "total_cost_cny": round(
+                sum(r["cost_cny"] for r in rs if r["cost_cny"] is not None), 6
+            ),
+            "cost_fully_priced": all(r["cost_cny"] is not None for r in rs),
         }
 
     summary_md_path = db_path.with_name(db_path.stem + ".summary.md")

@@ -27,7 +27,37 @@ def _tool_key(ev: TraceEvent) -> tuple:
     return (ev.data.get("tool"), json.dumps(ev.data.get("args", {}), sort_keys=True, ensure_ascii=False))
 
 
-def compute_metrics(events: list[TraceEvent]) -> dict[str, Any]:
+def _detect_loop_patterns(keys: list[tuple]) -> list[dict[str, Any]]:
+    """R-16：n-gram 循环检测——周期 p∈{1,2,3} 的片段连续重复 ≥3 个周期。
+
+    覆盖同键连发（AAA，p=1）与交替循环（ABAB / ABCABC，p=2/3）。
+    命中即返回最小周期的模式列表，供论文"无效行为识别"章节引用。
+    """
+    n = len(keys)
+    for p in (1, 2, 3):
+        patterns: list[dict[str, Any]] = []
+        i = 0
+        while i + 3 * p <= n:
+            block = keys[i:i + p]
+            if all(keys[i + k * p: i + (k + 1) * p] == block for k in (1, 2)):
+                reps = 1
+                j = i + p
+                while j + p <= n and keys[j:j + p] == block:
+                    reps += 1
+                    j += p
+                patterns.append({
+                    "period": p, "repeats": reps,
+                    "tools": [k[0] for k in block],
+                })
+                i = j
+            else:
+                i += 1
+        if patterns:
+            return patterns
+    return []
+
+
+def compute_metrics(events: list[TraceEvent], prices: dict | None = None) -> dict[str, Any]:
     tool_calls = [e for e in events if e.type == "tool_call"]
     llm_calls = [e for e in events if e.type == "llm_call"]
     error_events = [e for e in events if e.type == "error"]
@@ -38,7 +68,30 @@ def compute_metrics(events: list[TraceEvent]) -> dict[str, Any]:
     invalid = [e for e in tool_calls if e.data.get("status") == "error"]
     keys = [_tool_key(e) for e in tool_calls]
     duplicates = len(keys) - len(set(keys))
-    loop_detected = any(keys[i] == keys[i + 1] == keys[i + 2] for i in range(len(keys) - 2))
+    # R-16：n-gram 循环检测（AAA / ABAB / ABCABC，兼容旧"同键连续≥3"口径）
+    loop_patterns = _detect_loop_patterns(keys)
+    loop_detected = bool(loop_patterns)
+
+    # R-16：无进展检测——连续 tool_call（不含 finish）无新 file_diff 的最长长度
+    max_no_progress = streak_no_diff = 0
+    for e in sorted(events, key=lambda x: x.seq):
+        if e.type == "file_diff":
+            streak_no_diff = 0
+        elif e.type == "tool_call" and e.data.get("tool") != "finish":
+            streak_no_diff += 1
+            max_no_progress = max(max_no_progress, streak_no_diff)
+
+    # R-16：重复率拆分——写后重读同一文件属合理行为，不计入无效重复
+    written_paths: set = set()
+    reread_after_write = 0
+    for e in sorted(tool_calls, key=lambda x: x.seq):
+        tool = e.data.get("tool")
+        args = e.data.get("args", {}) or {}
+        if tool == "write_file":
+            written_paths.add(args.get("path"))
+        elif tool == "read_file" and args.get("path") in written_paths:
+            reread_after_write += 1
+    effective_duplicates = max(0, duplicates - reread_after_write)
 
     max_consecutive_errors = streak = 0
     for e in tool_calls:
@@ -50,6 +103,26 @@ def compute_metrics(events: list[TraceEvent]) -> dict[str, Any]:
 
     prompt = sum(int(e.data.get("usage", {}).get("prompt_tokens", 0)) for e in llm_calls)
     completion = sum(int(e.data.get("usage", {}).get("completion_tokens", 0)) for e in llm_calls)
+
+    # R-17：成本金额折算（模型无价目时不猜测，如实标注未计价）
+    from .pricing import compute_cost, load_prices
+    price_table = prices if prices is not None else load_prices()
+    cost_total = 0.0
+    unpriced_tokens = 0
+    priced = True
+    for e in llm_calls:
+        u = e.data.get("usage", {})
+        c = compute_cost(
+            str(e.data.get("model", "")),
+            int(u.get("prompt_tokens", 0)), int(u.get("completion_tokens", 0)),
+            price_table,
+        )
+        if c is None:
+            priced = False
+            unpriced_tokens += int(u.get("prompt_tokens", 0)) + int(u.get("completion_tokens", 0))
+        else:
+            cost_total += c
+    cost_cny = round(cost_total, 6) if llm_calls else 0.0
 
     # R-09：统一耗时归因——各阶段耗时占比 + 最慢步骤 TopN
     llm_time = sum(int(e.data.get("duration_ms", 0)) for e in llm_calls)
@@ -91,11 +164,21 @@ def compute_metrics(events: list[TraceEvent]) -> dict[str, Any]:
         "duplicate_tool_calls": duplicates,
         "duplicate_tool_rate": round(duplicates / len(tool_calls), 4) if tool_calls else 0.0,
         "loop_detected": loop_detected,
+        "loop_patterns": loop_patterns,
+        "max_no_progress_streak": max_no_progress,
+        "no_progress_detected": max_no_progress >= 4 and not passed,
+        "reread_after_write_count": reread_after_write,
+        "effective_duplicate_tool_rate": (
+            round(effective_duplicates / len(tool_calls), 4) if tool_calls else 0.0
+        ),
         "max_consecutive_errors": max_consecutive_errors,
         "finish_reached": any(e.data.get("tool") == "finish" for e in tool_calls),
         "prompt_tokens": prompt,
         "completion_tokens": completion,
         "total_tokens": prompt + completion,
+        "cost_cny": cost_cny,
+        "cost_fully_priced": priced,
+        "unpriced_tokens": unpriced_tokens,
         "llm_time_ms": llm_time,
         "tool_time_ms": tool_time,
         "command_time_ms": command_time,

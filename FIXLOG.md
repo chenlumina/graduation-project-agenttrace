@@ -17,6 +17,8 @@
 | R-14 | 失败归因依赖中文文本匹配 | 严重 | ✅ 已完成 | 2026-11-11 | 全量 126 项通过 |
 | R-08 | llm_call 全量落库，存储平方级膨胀 | 严重 | ✅ 已完成 | 2026-11-11 | 全量 126 项通过 |
 | R-03 | 任务集天花板效应 | 阻断 | ✅ 已完成 | 2026-11-11 | taskset 参照解回归全过 |
+| R-16 | 循环检测口径过窄 | 一般 | ✅ 已完成 | 2026-11-13 | n-gram+无进展+重复率拆分 |
+| R-17 | 缺少成本金额指标 | 一般 | ✅ 已完成 | 2026-11-13 | 价目表+通过率—成本帕累托分析 |
 | R-04 | 实验统计口径不足 | 严重 | ✅ 已完成 | 2026-11-11 | 全量 127 项通过 |
 | R-05 | 缺少故障注入实验 | 严重 | ✅ 已完成 | 2026-11-11 | 全量 133 项通过 |
 
@@ -105,6 +107,20 @@
 - **commit**：`feat(R-05)`。
 
 ---
+
+## R-16　循环/无进展检测与重复率拆分（一般，P2，2026-11-13）
+
+- n-gram 循环检测：周期 1–3 连续 ≥3 周期（AAA/ABAB/ABCABC），输出 loop_patterns（周期、重复数、工具序列），旧"同键连续≥3"为其特例。
+- 无进展检测：连续 tool_call（不含 finish）无新 file_diff 的最长长度 max_no_progress_streak；≥4 且未通过 → no_progress_detected。
+- 重复率拆分：写后重读同一文件计为合理行为（reread_after_write_count），effective_duplicate_tool_rate 予以剔除。
+- commit：`feat(R-16)`。
+
+## R-17　成本金额指标（一般，P2，2026-11-13）
+
+- 新模块 `pricing.py`：每百万 token 输入/输出价目表（CNY），AGENTTRACE_PRICE_FILE JSON 覆盖；未知模型不猜测价格，计入 unpriced_tokens 并标注。
+- `metrics.compute_metrics` 新增 cost_cny / cost_fully_priced / unpriced_tokens。
+- `experiments`：row/聚合成本字段；报告新增"通过率—成本分析"（单次通过成本 + 帕累托最优标注）；原"单价按价目折算"的口径描述与实现终于一致。
+- commit：`feat(R-17)`。
 
 ## R-14　结构化 error_code 失败归因（严重，P1）
 
