@@ -2,9 +2,10 @@
 :root{
   --paper:#f2ede2; --paper-deep:#e8e0cf; --ink:#1c1a16; --ink-soft:#57524a; --ink-faint:#8f887b;
   --accent:#d64522; --accent-deep:#a32d12; --teal:#1f4f46; --line:#cec4b0;
-  --font-display:"Noto Serif SC",serif;
-  --font-body:"Noto Sans SC",sans-serif;
-  --font-mono:"DM Mono",monospace;
+  /* R-23：latin 走自托管字体；中文回退系统字体（离线可用，版式差异可接受） */
+  --font-display:"Noto Serif SC","Source Han Serif SC","Songti SC","SimSun",serif;
+  --font-body:"Noto Sans SC","Source Han Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --font-mono:"DM Mono","SFMono-Regular",Consolas,monospace;
   --ease:cubic-bezier(.22,1,.36,1);
 }
 *{box-sizing:border-box;margin:0;padding:0}

@@ -134,11 +134,22 @@ class TestServerAPI(unittest.TestCase):
             html = r.read().decode("utf-8")
         self.assertIn("AgentTrace", html)
         self.assertIn("/static/app.js", html)
+        # R-23：字体自托管，页面零外部字体依赖
+        self.assertIn("/static/fonts.css", html)
+        self.assertNotIn("fonts.googleapis.com", html)
+        self.assertNotIn("fonts.gstatic.com", html)
 
     def test_static_assets(self):
-        for path in ("/static/app.js", "/static/style.css"):
+        for path in ("/static/app.js", "/static/style.css", "/static/fonts.css"):
             with urllib.request.urlopen(self.base + path, timeout=10) as r:
                 self.assertEqual(r.status, 200)
+
+    def test_csp_no_external_fonts(self):
+        """R-23：CSP 收紧为仅 self（字体不再外链）。"""
+        from agenttrace.server import SECURITY_HEADERS
+        csp = SECURITY_HEADERS["Content-Security-Policy"]
+        self.assertIn("font-src 'self'", csp)
+        self.assertNotIn("fonts.googleapis.com", csp)
 
 
 if __name__ == "__main__":
