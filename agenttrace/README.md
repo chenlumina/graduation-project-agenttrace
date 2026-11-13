@@ -177,7 +177,7 @@ agenttrace/
 | 路径规则不可被绕过 | 路径先做词法归一化（折叠 `..`、拒绝绝对路径/盘符），再匹配白名单与黑名单 | `policy.py` |
 | 宿主执行风险 | 本地（宿主机）模式默认禁止 `run_command`，需 `--allow-local-commands` 显式放行；Docker 模式下命令在断网、限额、`--cap-drop ALL` 的容器内执行 | `runner.py`、`sandbox.py` |
 | 凭据不外泄 | Agent 命令、MCP 工具服务器、测试进程一律使用环境变量白名单，`AGENTTRACE_LLM_API_KEY` 等不会被子进程继承 | `envutil.py` |
-| 提示注入 | 工具返回的文件内容/命令输出以 `<untrusted_data>` 包裹后回灌模型；命中注入特征时在 `tool_call` 事件留 `injection_flags` | `agent.py` |
+| 提示注入 | 工具返回的文件内容/命令输出以 `<untrusted_data>` 包裹后回灌模型；命中注入特征时在 `tool_call` 事件留 `injection_flags`。**定位为风险留痕与可观测性，不是防御机制**：命中不阻断、规则覆盖有限（R-21 已在论文口径中明确） | `agent.py` |
 | 回放服务暴露面 | 轨迹 API 可用 `--token` 鉴权；非回环地址未给令牌时拒绝启动；响应附 CSP 等安全头；`attempt_id` 必须匹配 32 位十六进制 | `server.py`、`__main__.py` |
 
 事件类型新增 `policy_audit`（授权决策，通道无关），`mcp_audit` 只保留 MCP 协议层的声明事件；

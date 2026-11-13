@@ -51,6 +51,16 @@ def main(argv: list[str] | None = None) -> int:
     p_exp.add_argument("attempt_id")
     p_exp.add_argument("--db", default="traces.db")
     p_exp.add_argument("--out", required=True)
+    p_exp.add_argument(
+        "--no-redact", action="store_true",
+        help="导出时保留原始内容（默认脱敏：遮蔽密钥/令牌/邮箱等敏感信息，R-22）",
+    )
+
+    p_purge = sub.add_parser("purge", help="清理历史轨迹（按保留天数，R-22）")
+    p_purge.add_argument("--db", default="traces.db")
+    p_purge.add_argument(
+        "--days", type=int, required=True, help="保留最近 N 天，早于该窗口的尝试将被删除"
+    )
 
     sub.add_parser("attempts", help="列出历史尝试").add_argument("--db", default="traces.db")
 
@@ -222,11 +232,23 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "export":
         store = TraceStore(args.db)
-        doc = store.export(args.attempt_id)
+        doc = store.export(args.attempt_id, redact=not args.no_redact)
         Path(args.out).write_text(
             json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        print(f"已导出 {len(doc['events'])} 个事件 -> {args.out}")
+        mode = "（未脱敏）" if args.no_redact else "（已脱敏）"
+        print(f"已导出 {len(doc['events'])} 个事件{mode} -> {args.out}")
+        return 0
+
+    if args.cmd == "purge":
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=args.days)).isoformat(
+            timespec="milliseconds"
+        )
+        store = TraceStore(args.db)
+        removed = store.delete_attempts_before(cutoff)
+        store.close()
+        print(f"已清理 {removed} 个早于 {cutoff} 的尝试（保留最近 {args.days} 天）")
         return 0
 
     store = TraceStore(args.db)

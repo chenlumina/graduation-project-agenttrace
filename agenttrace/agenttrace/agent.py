@@ -73,7 +73,9 @@ READ_MAX_LIMIT = 8000
 #: 返回内容属于"外部数据"的工具：其输出回灌模型前必须包裹 <untrusted_data>
 _UNTRUSTED_PAYLOAD_TOOLS = ("read_file", "write_file", "run_tests", "run_command")
 
-#: 间接提示注入的特征（H-3）：命中即在轨迹里留痕，供鲁棒性指标使用
+#: 间接提示注入的特征（H-3 / R-21）：命中即在轨迹里留痕，供鲁棒性指标与人工复盘使用。
+#: 定位说明：这是**风险留痕与可观测性**机制，不是防御机制——命中不阻断、不告警升级，
+#: 正则覆盖有限（论文中应如实报告检出率与漏检情况，不得表述为"注入防御"）。
 _INJECTION_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"ignore\s+(all\s+)?(previous|prior|above)\s+instructions", re.I),
      "ignore_previous_instructions"),

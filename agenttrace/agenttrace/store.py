@@ -188,21 +188,42 @@ class TraceStore:
             "SELECT COUNT(*) FROM events WHERE attempt_id = ?", (attempt_id,)
         ).fetchone()[0])
 
-    def export(self, attempt_id: str) -> dict[str, Any]:
+    def export(self, attempt_id: str, redact: bool = False) -> dict[str, Any]:
         """导出为可回放的轨迹文档（schema_version + 尝试元信息 + 事件流）。
 
         派生字段（_metrics / _classification 等以 _ 开头的键）不随导出下发。
+        redact=True 时对事件 data 与尝试 meta 做敏感信息脱敏（R-22）。
         """
         meta = self.get_attempt(attempt_id)
         if meta is None:
             raise KeyError(f"尝试不存在: {attempt_id}")
         attempt = meta.to_dict()
         attempt["meta"] = {k: v for k, v in meta.meta.items() if not k.startswith("_")}
+        events = [ev.to_dict() for ev in self.events(attempt_id)]
+        if redact:
+            from .redact import redact_obj
+            events = redact_obj(events)
+            attempt = redact_obj(attempt)
         return {
             "schema_version": SCHEMA_VERSION,
             "attempt": attempt,
-            "events": [ev.to_dict() for ev in self.events(attempt_id)],
+            "events": events,
         }
+
+    def delete_attempts_before(self, cutoff_iso: str) -> int:
+        """R-22：清理 started_at 早于 cutoff 的尝试及其事件，返回删除的尝试数。"""
+        ids = [
+            r[0] for r in self._conn.execute(
+                "SELECT attempt_id FROM attempts WHERE started_at < ?", (cutoff_iso,)
+            ).fetchall()
+        ]
+        if not ids:
+            return 0
+        marks = ",".join("?" for _ in ids)
+        self._conn.execute(f"DELETE FROM events WHERE attempt_id IN ({marks})", ids)
+        self._conn.execute(f"DELETE FROM attempts WHERE attempt_id IN ({marks})", ids)
+        self._conn.commit()
+        return len(ids)
 
     def close(self) -> None:
         self._conn.close()

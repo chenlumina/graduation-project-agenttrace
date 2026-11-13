@@ -1,10 +1,16 @@
 """轨迹采集器：为每次尝试维护递增 seq，统一生成并落库事件。"""
 from __future__ import annotations
 
+import os
 from typing import Any, Optional
 
 from .model import TraceEvent, new_id, now_iso
 from .store import TraceStore
+
+
+def _redact_enabled() -> bool:
+    """R-22：采集侧脱敏开关（环境变量 AGENTTRACE_REDACT=1）。"""
+    return os.environ.get("AGENTTRACE_REDACT", "") == "1"
 
 
 class TraceCollector:
@@ -16,6 +22,9 @@ class TraceCollector:
         self._seq = 0
 
     def emit(self, type: str, data: dict[str, Any], parent_id: Optional[str] = None) -> TraceEvent:
+        if _redact_enabled():  # R-22：采集侧脱敏钩子（默认关闭，保真优先）
+            from .redact import redact_obj
+            data = redact_obj(data)
         self._seq += 1
         ev = TraceEvent(
             id=new_id(),
